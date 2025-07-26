@@ -6,6 +6,7 @@ import {
   GetCodebaseTopLargestFilesArgsSchema,
   ReadFileArgsSchema,
   WriteFileArgsSchema,
+  EditFileArgsSchema,
   CreateDirectoryArgsSchema,
   ListDirectoryArgsSchema,
   DirectoryTreeArgsSchema,
@@ -21,6 +22,7 @@ import { handleGetCodebase } from './handlers/get_codebase.js';
 import { handleGetCodebaseTopLargestFiles } from './handlers/get_codebase_top_largest_files.js';
 import { handleReadFile } from './handlers/read_file.js';
 import { handleWriteFile } from './handlers/write_file.js';
+import { handleEditFile } from './handlers/edit_file.js';
 import { handleCreateDirectory } from './handlers/create_directory.js';
 import { handleListDirectory } from './handlers/list_directory.js';
 import { handleDirectoryTree } from './handlers/directory_tree.js';
@@ -77,15 +79,25 @@ const additionalTools: ToolWithHandler[] = [
     inputSchema: zodToJsonSchema(ReadFileArgsSchema) as ToolInput,
     handler: handleReadFile,
   },
-  {
-    name: 'write_file',
-    description:
-      'Create a new file or completely overwrite an existing file with new content. ' +
-      "Use relative paths with or without './' prefix (e.g., 'newfile.txt', './folder/file.txt'). " +
-      'You must write out the file in full each time you call write_file.',
-    inputSchema: zodToJsonSchema(WriteFileArgsSchema) as ToolInput,
-    handler: handleWriteFile,
-  },
+  process.env.CONTEXT_CODER_EDIT_MODE === 'true'
+    ? {
+        name: 'edit_file',
+        description:
+          'Make line-based edits to a text file. Each edit replaces exact line sequences ' +
+          "with new content. Use relative paths with or without './' prefix (e.g., 'file.txt', './folder/file.txt'). " +
+          'Only works within allowed directories.',
+        inputSchema: zodToJsonSchema(EditFileArgsSchema) as ToolInput,
+        handler: handleEditFile,
+      }
+    : {
+        name: 'write_file',
+        description:
+          'Create a new file or completely overwrite an existing file with new content. ' +
+          "Use relative paths with or without './' prefix (e.g., 'newfile.txt', './folder/file.txt'). " +
+          'You must write out the file in full each time you call write_file.',
+        inputSchema: zodToJsonSchema(WriteFileArgsSchema) as ToolInput,
+        handler: handleWriteFile,
+      },
   {
     name: 'create_directory',
     description:

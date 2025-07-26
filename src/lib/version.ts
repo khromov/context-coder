@@ -17,7 +17,7 @@ export function getVersion(): string {
   }
 
   let version: string;
-  
+
   try {
     const packageJsonPath = join(__dirname, '..', '..', 'package.json');
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));

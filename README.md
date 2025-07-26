@@ -252,12 +252,12 @@ To use these prompts in Claude Code:
 
 1. Type `/` to open the prompt menu
 2. Find "context-coder" in the list, then "Context Coder: Claude Code Setup"
-4. The prompt will be inserted automatically
-5. You may directly add a task after the prompt, eg `/context-coder:Context Coder: Claude Code Setup (MCP) Add a new endpoint that returns a random number`
+3. The prompt will be inserted automatically
+4. You may directly add a task after the prompt, eg `/context-coder:Context Coder: Claude Code Setup (MCP) Add a new endpoint that returns a random number`
 
 To use these prompts in Claude Desktop:
 
-*As of the writing of this README, Claude Desktop does not support MCP Prompts. Create a Claude Project and use the prompts from this README.md file as the project instructions.*
+_As of the writing of this README, Claude Desktop does not support MCP Prompts. Create a Claude Project and use the prompts from this README.md file as the project instructions._
 
 ## CLI Commands
 

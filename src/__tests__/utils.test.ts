@@ -89,7 +89,7 @@ describe('validateRelativePath', () => {
   it('should handle complex paths with mixed valid and invalid patterns', () => {
     // Valid: dots in filenames, not parent references
     expect(() => validateRelativePath('src/routes/[...rest]/+page.svelte')).not.toThrow();
-    
+
     // Invalid: actual parent reference mixed with SvelteKit syntax
     expect(() => validateRelativePath('src/routes/../[...rest]/+page.svelte')).toThrow(
       'Path cannot contain parent directory references'

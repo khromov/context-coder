@@ -84,3 +84,14 @@ export const GetCodebaseTopLargestFilesArgsSchema = z.object({
     .default(20)
     .describe('Number of largest files to return (defaults to 20)'),
 });
+
+export const EditOperation = z.object({
+  oldText: z.string().describe('Text to search for - must match exactly'),
+  newText: z.string().describe('Text to replace with'),
+});
+
+export const EditFileArgsSchema = z.object({
+  path: z.string().describe('Relative path from root directory (with or without "./" prefix)'),
+  edits: z.array(EditOperation),
+  dryRun: z.boolean().default(false).describe('Preview changes using git-style diff format'),
+});

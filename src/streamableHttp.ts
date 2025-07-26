@@ -158,6 +158,18 @@ app.delete('/mcp', async (req: Request, res: Response) => {
   }
 });
 
+// Health check endpoint
+app.get('/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'healthy',
+    version: getVersion(),
+    mode: mode,
+    buildType: buildType,
+    timestamp: new Date().toISOString(),
+    activeTransports: transports.size,
+  });
+});
+
 // Start the server
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {

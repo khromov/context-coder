@@ -6,6 +6,8 @@ if [ "$BUILD_TYPE" = "mini" ]; then
   MODE_FLAG="--mini"
 elif [ "$BUILD_TYPE" = "full" ]; then
   MODE_FLAG="--full"
+elif [ "$BUILD_TYPE" = "edit" ]; then
+  MODE_FLAG="--full --edit-file-mode"
 fi
 
 if [ "$MCP_TRANSPORT" = "stdio" ]; then

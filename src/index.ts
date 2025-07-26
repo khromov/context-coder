@@ -27,6 +27,10 @@ async function runServer(options: any, command: any) {
   const mode = isFullMode ? 'full' : 'mini';
   process.env.CONTEXT_CODER_MODE = mode;
 
+  if (options.editFileMode) {
+    process.env.CONTEXT_CODER_EDIT_MODE = 'true';
+  }
+
   // Log startup information
   logger.info(`Current directory: ${process.cwd()}`);
 
@@ -50,6 +54,7 @@ program
   .option('--mini', 'run in mini mode (only core tools)')
   .option('--full', 'run in full mode (all tools)')
   .option('--stdio', 'use stdio transport instead of HTTP')
+  .option('--edit-file-mode', 'use edit_file tool instead of write_file (partial edits)')
   .action(runServer);
 
 // Add the 'ls' subcommand

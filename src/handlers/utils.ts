@@ -9,22 +9,23 @@ export function validateRelativePath(relativePath: string): void {
 
   // Check for parent directory references in the original path before normalization
   // This catches cases like '../', './..', 'src/../', etc.
-  const pathToCheck = relativePath.startsWith('./') || relativePath === '.' ? relativePath : './' + relativePath;
-  
+  const pathToCheck =
+    relativePath.startsWith('./') || relativePath === '.' ? relativePath : './' + relativePath;
+
   // Split the path and check each segment for exact parent directory references
   // Use both forward slashes and the platform's path separator to handle cross-platform paths
   const segments = pathToCheck.replace(/\\/g, '/').split('/');
-  
+
   for (const segment of segments) {
     // Check for exact parent directory references
     if (segment === '..') {
       throw new Error(`Path cannot contain parent directory references (got: ${relativePath})`);
     }
   }
-  
+
   // Additional check: normalize the path and ensure it doesn't escape the current directory
   const normalized = path.normalize(pathToCheck);
-  
+
   // If the normalized path starts with '../' or is exactly '..', it's trying to escape
   if (normalized === '..' || normalized.startsWith('../') || normalized.startsWith('..\\')) {
     throw new Error(`Path cannot contain parent directory references (got: ${relativePath})`);
