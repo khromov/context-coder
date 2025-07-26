@@ -31,7 +31,7 @@ async function runStdioServer() {
 
     // Log to stderr only - stdout is for MCP protocol
     const mode = process.env.CONTEXT_CODER_MODE || 'mini';
-    const version = getVersion();
+    const version = await getVersion();
     logger.info(`🥥 Coco MCP Server v${version} running in stdio mode (${mode})`);
   } catch (error) {
     logger.error('Failed to start stdio server:', error);

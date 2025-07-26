@@ -42,9 +42,8 @@ async function runServer(options: any, command: any) {
   }
 }
 
-// Configure the main program
+// Configure the main program - we'll set version after async initialization
 program
-  .version(getVersion())
   .name('context-coder')
   .description('Context Coder: MCP server for full-context coding')
   .option('--mini', 'run in mini mode (only core tools)')
@@ -65,5 +64,8 @@ program
     await listFiles(options);
   });
 
-// Parse command line arguments
-program.parse(process.argv);
+// Set version asynchronously and parse arguments
+(async () => {
+  program.version(await getVersion());
+  program.parse(process.argv);
+})();

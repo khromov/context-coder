@@ -6,7 +6,7 @@ import {
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { readFileSync } from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -19,15 +19,14 @@ import { getVersion } from './lib/version.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Try to read instructions file, but don't fail if it doesn't exist
-let instructions = '';
-try {
-  instructions = readFileSync(join(__dirname, 'instructions.md'), 'utf-8');
-} catch (error) {
-  logger.warn('Warning: instructions.md not found, continuing without instructions');
-}
-
 export const createServer = async () => {
+  // Try to read instructions file, but don't fail if it doesn't exist
+  let instructions = '';
+  try {
+    instructions = await fs.readFile(join(__dirname, 'instructions.md'), 'utf-8');
+  } catch (error) {
+    logger.warn('Warning: instructions.md not found, continuing without instructions');
+  }
   // Determine the root directory based on environment
   const ROOT_DIR = process.env.COCO_DEV === 'true' ? './mount' : './';
 
@@ -40,7 +39,7 @@ export const createServer = async () => {
   const server = new Server(
     {
       name: 'context-coder',
-      version: getVersion(),
+      version: await getVersion(),
     },
     {
       capabilities: {
