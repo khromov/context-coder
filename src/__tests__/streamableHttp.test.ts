@@ -208,7 +208,7 @@ describe('HTTP Server Integration Tests', () => {
       // Extract JSON from SSE format - handle multiple data lines
       const dataLines = sseData.split('\n').filter((line) => line.startsWith('data: '));
       expect(dataLines.length).toBeGreaterThan(0);
-      
+
       // Find the response (not the roots/list notification)
       let jsonData = null;
       for (const dataLine of dataLines) {
@@ -281,7 +281,7 @@ describe('HTTP Server Integration Tests', () => {
       expect(typeof toolsSseData).toBe('string');
       const toolsDataLines = toolsSseData.split('\n').filter((line) => line.startsWith('data: '));
       expect(toolsDataLines.length).toBeGreaterThan(0);
-      
+
       // Find the response (not notifications)
       let toolsJsonData = null;
       for (const dataLine of toolsDataLines) {
@@ -339,7 +339,7 @@ describe('HTTP Server Integration Tests', () => {
         .split('\n')
         .filter((line: string) => line.startsWith('data: '));
       expect(initDataLines.length).toBeGreaterThan(0);
-      
+
       // Find the initialize response (not notifications)
       let initDataLine = null;
       for (const dataLine of initDataLines) {
@@ -394,7 +394,7 @@ describe('HTTP Server Integration Tests', () => {
       expect(typeof sseData).toBe('string');
       const dataLines = sseData.split('\n').filter((line) => line.startsWith('data: '));
       expect(dataLines.length).toBeGreaterThan(0);
-      
+
       // Find the response (not notifications)
       let jsonData = null;
       for (const dataLine of dataLines) {
