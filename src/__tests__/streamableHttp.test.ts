@@ -204,6 +204,29 @@ describe('HTTP Server Integration Tests', () => {
       const sseData = response.data;
       expect(typeof sseData).toBe('string');
       expect(sseData).toContain('data: ');
+
+      // Extract JSON from SSE format - handle multiple data lines
+      const dataLines = sseData.split('\n').filter((line) => line.startsWith('data: '));
+      expect(dataLines.length).toBeGreaterThan(0);
+      
+      // Find the response (not the roots/list notification)
+      let jsonData = null;
+      for (const dataLine of dataLines) {
+        const parsed = JSON.parse(dataLine.substring(6)); // Remove 'data: '
+        // Skip notifications/requests (they have 'method' field)
+        if (!parsed.method && parsed.id === 1) {
+          jsonData = parsed;
+          break;
+        }
+      }
+      expect(jsonData).toBeTruthy();
+
+      expect(jsonData).toHaveProperty('jsonrpc', '2.0');
+      expect(jsonData).toHaveProperty('id', 1);
+      expect(jsonData).toHaveProperty('result');
+      expect(jsonData.result).toHaveProperty('protocolVersion');
+      expect(jsonData.result).toHaveProperty('serverInfo');
+      expect(jsonData.result.serverInfo).toHaveProperty('name', 'context-coder');
     } finally {
       serverProcess.kill('SIGTERM');
       await new Promise<void>((resolve) => {
@@ -256,9 +279,19 @@ describe('HTTP Server Integration Tests', () => {
       // Parse SSE data for tools response
       const toolsSseData = toolsResponse.data;
       expect(typeof toolsSseData).toBe('string');
-      const toolsDataLine = toolsSseData.split('\n').find((line) => line.startsWith('data: '));
-      expect(toolsDataLine).toBeTruthy();
-      const toolsJsonData = JSON.parse(toolsDataLine!.substring(6));
+      const toolsDataLines = toolsSseData.split('\n').filter((line) => line.startsWith('data: '));
+      expect(toolsDataLines.length).toBeGreaterThan(0);
+      
+      // Find the response (not notifications)
+      let toolsJsonData = null;
+      for (const dataLine of toolsDataLines) {
+        const parsed = JSON.parse(dataLine.substring(6));
+        if (!parsed.method && parsed.id === 2) {
+          toolsJsonData = parsed;
+          break;
+        }
+      }
+      expect(toolsJsonData).toBeTruthy();
 
       expect(toolsJsonData).toHaveProperty('jsonrpc', '2.0');
       expect(toolsJsonData).toHaveProperty('id', 2);
@@ -302,9 +335,20 @@ describe('HTTP Server Integration Tests', () => {
 
       // Extract session ID from SSE format
       const initSseData = initResponse.data;
-      const initDataLine = initSseData
+      const initDataLines = initSseData
         .split('\n')
-        .find((line: string) => line.startsWith('data: '));
+        .filter((line: string) => line.startsWith('data: '));
+      expect(initDataLines.length).toBeGreaterThan(0);
+      
+      // Find the initialize response (not notifications)
+      let initDataLine = null;
+      for (const dataLine of initDataLines) {
+        const parsed = JSON.parse(dataLine.substring(6));
+        if (!parsed.method && parsed.id === 1) {
+          initDataLine = dataLine;
+          break;
+        }
+      }
       expect(initDataLine).toBeTruthy();
 
       expect(initResponse.status).toBe(200);
@@ -348,9 +392,19 @@ describe('HTTP Server Integration Tests', () => {
       // Parse SSE data for tools response
       const sseData = response.data;
       expect(typeof sseData).toBe('string');
-      const dataLine = sseData.split('\n').find((line) => line.startsWith('data: '));
-      expect(dataLine).toBeTruthy();
-      const jsonData = JSON.parse(dataLine!.substring(6));
+      const dataLines = sseData.split('\n').filter((line) => line.startsWith('data: '));
+      expect(dataLines.length).toBeGreaterThan(0);
+      
+      // Find the response (not notifications)
+      let jsonData = null;
+      for (const dataLine of dataLines) {
+        const parsed = JSON.parse(dataLine.substring(6));
+        if (!parsed.method && parsed.id === 1) {
+          jsonData = parsed;
+          break;
+        }
+      }
+      expect(jsonData).toBeTruthy();
 
       expect(jsonData).toHaveProperty('jsonrpc', '2.0');
       expect(jsonData).toHaveProperty('id', 1);
