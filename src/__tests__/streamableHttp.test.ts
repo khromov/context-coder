@@ -21,11 +21,11 @@ describe('HTTP Server Integration Tests', () => {
   // Helper to parse SSE data and find a specific JSON-RPC response
   const findJsonRpcResponse = (sseData: string, requestId: number): any => {
     const dataLines = sseData.split('\n').filter((line) => line.startsWith('data: '));
-    
+
     for (const dataLine of dataLines) {
       try {
         const parsed = JSON.parse(dataLine.substring(6)); // Remove 'data: '
-        
+
         // Check if this is a valid JSON-RPC 2.0 response for our request
         if (
           parsed.jsonrpc === '2.0' &&
@@ -40,7 +40,7 @@ describe('HTTP Server Integration Tests', () => {
         continue;
       }
     }
-    
+
     return null;
   };
 
@@ -294,7 +294,7 @@ describe('HTTP Server Integration Tests', () => {
       // Parse SSE data for tools response
       const toolsSseData = toolsResponse.data;
       expect(typeof toolsSseData).toBe('string');
-      
+
       const toolsJsonData = findJsonRpcResponse(toolsSseData, 2);
       expect(toolsJsonData).toBeTruthy();
       expect(toolsJsonData).not.toBeNull();
@@ -398,7 +398,7 @@ describe('HTTP Server Integration Tests', () => {
       // Parse SSE data for tools response
       const sseData = response.data;
       expect(typeof sseData).toBe('string');
-      
+
       const jsonData = findJsonRpcResponse(sseData, 1);
       expect(jsonData).toBeTruthy();
       expect(jsonData).not.toBeNull();
