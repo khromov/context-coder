@@ -18,6 +18,32 @@ describe('HTTP Server Integration Tests', () => {
     process.env = originalEnv;
   });
 
+  // Helper to parse SSE data and find a specific JSON-RPC response
+  const findJsonRpcResponse = (sseData: string, requestId: number): any => {
+    const dataLines = sseData.split('\n').filter((line) => line.startsWith('data: '));
+    
+    for (const dataLine of dataLines) {
+      try {
+        const parsed = JSON.parse(dataLine.substring(6)); // Remove 'data: '
+        
+        // Check if this is a valid JSON-RPC 2.0 response for our request
+        if (
+          parsed.jsonrpc === '2.0' &&
+          parsed.id === requestId &&
+          (parsed.result !== undefined || parsed.error !== undefined) &&
+          !parsed.method // Ensure it's not a request/notification
+        ) {
+          return parsed;
+        }
+      } catch {
+        // Invalid JSON, skip this line
+        continue;
+      }
+    }
+    
+    return null;
+  };
+
   const startServerOnPort = (port: number): Promise<{ process: ChildProcess; baseUrl: string }> => {
     return new Promise((resolve, reject) => {
       const indexPath = path.join(__dirname, '..', '..', 'dist', 'index.js');
@@ -205,21 +231,10 @@ describe('HTTP Server Integration Tests', () => {
       expect(typeof sseData).toBe('string');
       expect(sseData).toContain('data: ');
 
-      // Extract JSON from SSE format - handle multiple data lines
-      const dataLines = sseData.split('\n').filter((line) => line.startsWith('data: '));
-      expect(dataLines.length).toBeGreaterThan(0);
-
-      // Find the response (not the roots/list notification)
-      let jsonData = null;
-      for (const dataLine of dataLines) {
-        const parsed = JSON.parse(dataLine.substring(6)); // Remove 'data: '
-        // Skip notifications/requests (they have 'method' field)
-        if (!parsed.method && parsed.id === 1) {
-          jsonData = parsed;
-          break;
-        }
-      }
+      // Extract JSON from SSE format
+      const jsonData = findJsonRpcResponse(sseData, 1);
       expect(jsonData).toBeTruthy();
+      expect(jsonData).not.toBeNull();
 
       expect(jsonData).toHaveProperty('jsonrpc', '2.0');
       expect(jsonData).toHaveProperty('id', 1);
@@ -279,19 +294,10 @@ describe('HTTP Server Integration Tests', () => {
       // Parse SSE data for tools response
       const toolsSseData = toolsResponse.data;
       expect(typeof toolsSseData).toBe('string');
-      const toolsDataLines = toolsSseData.split('\n').filter((line) => line.startsWith('data: '));
-      expect(toolsDataLines.length).toBeGreaterThan(0);
-
-      // Find the response (not notifications)
-      let toolsJsonData = null;
-      for (const dataLine of toolsDataLines) {
-        const parsed = JSON.parse(dataLine.substring(6));
-        if (!parsed.method && parsed.id === 2) {
-          toolsJsonData = parsed;
-          break;
-        }
-      }
+      
+      const toolsJsonData = findJsonRpcResponse(toolsSseData, 2);
       expect(toolsJsonData).toBeTruthy();
+      expect(toolsJsonData).not.toBeNull();
 
       expect(toolsJsonData).toHaveProperty('jsonrpc', '2.0');
       expect(toolsJsonData).toHaveProperty('id', 2);
@@ -392,19 +398,10 @@ describe('HTTP Server Integration Tests', () => {
       // Parse SSE data for tools response
       const sseData = response.data;
       expect(typeof sseData).toBe('string');
-      const dataLines = sseData.split('\n').filter((line) => line.startsWith('data: '));
-      expect(dataLines.length).toBeGreaterThan(0);
-
-      // Find the response (not notifications)
-      let jsonData = null;
-      for (const dataLine of dataLines) {
-        const parsed = JSON.parse(dataLine.substring(6));
-        if (!parsed.method && parsed.id === 1) {
-          jsonData = parsed;
-          break;
-        }
-      }
+      
+      const jsonData = findJsonRpcResponse(sseData, 1);
       expect(jsonData).toBeTruthy();
+      expect(jsonData).not.toBeNull();
 
       expect(jsonData).toHaveProperty('jsonrpc', '2.0');
       expect(jsonData).toHaveProperty('id', 1);
