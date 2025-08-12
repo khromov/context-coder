@@ -4,6 +4,12 @@ Context Coder (aka. Coco) provides AI models with an MCP tools to load your enti
 
 📦 **[Available on npm](https://www.npmjs.com/package/context-coder)**
 
+## Demo
+
+One-shot complex redesign with a vague prompt not mentioning any specific files.
+
+https://github.com/user-attachments/assets/7eb4c39b-f069-47b5-b81a-d3d40c506f61
+
 ## Quick Start
 
 Context Coder supports three main ways of running it:
