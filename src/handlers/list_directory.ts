@@ -1,11 +1,11 @@
 import { ListDirectoryArgsSchema } from '../schemas.js';
-import { HandlerContext, HandlerResponse } from '../types.js';
+import type { HandlerContext, HandlerResponse, ToolInput } from '../types.js';
 import { validateRelativePath, resolveRelativePath } from './utils.js';
 import fs from 'fs/promises';
 import logger from '../logger.js';
 
 export async function handleListDirectory(
-  args: any,
+  args: ToolInput,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   logger.debug('📋 list_directory handler started');
@@ -21,7 +21,7 @@ export async function handleListDirectory(
     .map((entry) => `${entry.isDirectory() ? '[DIR]' : '[FILE]'} ${entry.name}`)
     .join('\n');
 
-  const result = {
+  const result: HandlerResponse = {
     content: [{ type: 'text', text: formatted }],
   };
 

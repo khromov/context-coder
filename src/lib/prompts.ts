@@ -1,4 +1,13 @@
-import { Prompt } from '@modelcontextprotocol/sdk/types.js';
+export interface Prompt {
+  name: string;
+  title?: string;
+  description?: string;
+  arguments?: Array<{
+    name: string;
+    description?: string;
+    required?: boolean;
+  }>;
+}
 
 export const prompts: Prompt[] = [
   {

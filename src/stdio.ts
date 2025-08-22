@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StdioTransport } from '@tmcp/transport-stdio';
 import { createServer } from './mcp.js';
 import logger from './logger.js';
 import { getVersion } from './lib/version.js';
@@ -13,21 +13,20 @@ export async function startStdioServer(): Promise<void> {
     const { server, cleanup } = await createServer();
 
     // Create stdio transport
-    const transport = new StdioServerTransport();
+    const transport = new StdioTransport(server);
 
     // Handle graceful shutdown
     const handleShutdown = async () => {
       logger.info('Shutting down stdio server...');
       await cleanup();
-      await transport.close();
       process.exit(0);
     };
 
     process.on('SIGINT', handleShutdown);
     process.on('SIGTERM', handleShutdown);
 
-    // Connect the server to the transport
-    await server.connect(transport);
+    // Start listening (tmcp transports handle the connection automatically)
+    transport.listen();
 
     // Log to stderr only - stdout is for MCP protocol
     const mode = process.env.CONTEXT_CODER_MODE || 'mini';

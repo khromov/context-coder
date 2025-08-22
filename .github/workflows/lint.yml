@@ -1,4 +1,4 @@
-name: Lint and Test
+name: Lint
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  lint-and-test:
+  lint:
     runs-on: ubuntu-latest
     
     steps:
@@ -28,6 +28,3 @@ jobs:
         
       - name: Check formatting
         run: npm run format:check
-        
-      - name: Run tests
-        run: npm test

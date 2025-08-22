@@ -1,5 +1,5 @@
 import { GetCodebaseSizeArgsSchema } from '../schemas.js';
-import { HandlerContext, HandlerResponse } from '../types.js';
+import type { HandlerContext, HandlerResponse, ToolInput } from '../types.js';
 import {
   validateRelativePath,
   resolveRelativePath,
@@ -10,7 +10,7 @@ import aiDigest from 'ai-digest';
 import logger from '../logger.js';
 
 export async function handleGetCodebaseSize(
-  args: any,
+  args: ToolInput,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   logger.debug('📊 get_codebase_size handler started');
@@ -95,7 +95,7 @@ export async function handleGetCodebaseSize(
       output += `You MUST now run the \`get_codebase\` tool to retrieve the actual codebase content - this is required for this MCP to function correctly.`;
     }
 
-    const handlerResult = {
+    const handlerResult: HandlerResponse = {
       content: [{ type: 'text', text: output }],
     };
 

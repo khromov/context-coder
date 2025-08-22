@@ -1,10 +1,13 @@
 import { ReadFileArgsSchema } from '../schemas.js';
-import { HandlerContext, HandlerResponse } from '../types.js';
+import type { HandlerContext, HandlerResponse, ToolInput } from '../types.js';
 import { validateRelativePath, resolveRelativePath } from './utils.js';
 import fs from 'fs/promises';
 import logger from '../logger.js';
 
-export async function handleReadFile(args: any, context: HandlerContext): Promise<HandlerResponse> {
+export async function handleReadFile(
+  args: ToolInput,
+  context: HandlerContext
+): Promise<HandlerResponse> {
   logger.debug('📖 read_file handler started');
 
   const parsed = ReadFileArgsSchema.safeParse(args);
@@ -17,7 +20,7 @@ export async function handleReadFile(args: any, context: HandlerContext): Promis
 
   const content = await fs.readFile(absolutePath, 'utf-8');
 
-  const result = {
+  const result: HandlerResponse = {
     content: [{ type: 'text', text: content }],
   };
 

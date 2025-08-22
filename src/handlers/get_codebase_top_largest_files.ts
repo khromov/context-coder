@@ -1,5 +1,5 @@
 import { GetCodebaseTopLargestFilesArgsSchema } from '../schemas.js';
-import { HandlerContext, HandlerResponse } from '../types.js';
+import type { HandlerContext, HandlerResponse, ToolInput } from '../types.js';
 import {
   validateRelativePath,
   resolveRelativePath,
@@ -10,7 +10,7 @@ import aiDigest from 'ai-digest';
 import logger from '../logger.js';
 
 export async function handleGetCodebaseTopLargestFiles(
-  args: any,
+  args: ToolInput,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   logger.debug('📈 get_codebase_top_largest_files handler started');
@@ -69,7 +69,7 @@ export async function handleGetCodebaseTopLargestFiles(
     output += `- **Total GPT tokens**: ${stats.totalGptTokens.toLocaleString()}\n`;
     output += `- **Total files**: ${sortedFiles.length}\n`;
 
-    const handlerResult = {
+    const handlerResult: HandlerResponse = {
       content: [{ type: 'text', text: output }],
     };
 

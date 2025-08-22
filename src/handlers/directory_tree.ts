@@ -1,11 +1,11 @@
 import { DirectoryTreeArgsSchema } from '../schemas.js';
-import { HandlerContext, HandlerResponse } from '../types.js';
+import type { HandlerContext, HandlerResponse, ToolInput } from '../types.js';
 import { validateRelativePath, resolveRelativePath } from './utils.js';
 import { buildTree } from '../file-operations.js';
 import logger from '../logger.js';
 
 export async function handleDirectoryTree(
-  args: any,
+  args: ToolInput,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   logger.debug('🌳 directory_tree handler started');
@@ -23,7 +23,7 @@ export async function handleDirectoryTree(
     context.absoluteRootDir
   );
 
-  const result = {
+  const result: HandlerResponse = {
     content: [
       {
         type: 'text',

@@ -1,6 +1,3 @@
-import { z } from 'zod';
-import { ToolSchema } from '@modelcontextprotocol/sdk/types.js';
-
 // Tree entry interface for directory tree
 export interface TreeEntry {
   name: string;
@@ -8,18 +5,28 @@ export interface TreeEntry {
   children?: TreeEntry[];
 }
 
-// MCP tool types
-export type ToolInput = z.infer<typeof ToolSchema.shape.inputSchema>;
-
 // Handler types
 export interface HandlerContext {
   absoluteRootDir: string;
 }
 
+// Updated to match tmcp CallToolResult format directly
 export interface HandlerResponse {
-  content: Array<{ type: string; text: string }>;
+  content?: Array<{ type: 'text'; text: string }>;
   isError?: boolean;
-  [key: string]: unknown; // Allow additional properties
 }
 
-export type ToolHandler = (args: any, context: HandlerContext) => Promise<HandlerResponse>;
+// Generic tool handler with properly typed arguments
+export type ToolHandler<T = Record<string, unknown>> = (
+  args: T,
+  context: HandlerContext
+) => Promise<HandlerResponse>;
+
+// MCP-specific types using proper structure based on tmcp specification
+export interface McpCallToolResult {
+  content?: Array<{ type: 'text'; text: string }>;
+  isError?: boolean;
+}
+
+// Tool input type for tmcp compatibility - prefer Record<string, unknown> over any
+export type ToolInput = Record<string, unknown>;

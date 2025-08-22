@@ -1,11 +1,11 @@
 import { GetCodebaseArgsSchema } from '../schemas.js';
-import { HandlerContext, HandlerResponse } from '../types.js';
+import type { HandlerContext, HandlerResponse, ToolInput } from '../types.js';
 import { validateRelativePath, resolveRelativePath, getIgnoreFile } from './utils.js';
 import { generateCodebaseDigest } from '../codebase-digest.js';
 import logger from '../logger.js';
 
 export async function handleGetCodebase(
-  args: any,
+  args: ToolInput,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   const parsed = GetCodebaseArgsSchema.safeParse(args);
@@ -40,7 +40,7 @@ export async function handleGetCodebase(
     // The message is already in the correct format from codebase-digest.ts
     const content = result.content;
 
-    const handlerResult = {
+    const handlerResult: HandlerResponse = {
       content: [{ type: 'text', text: content }],
     };
 

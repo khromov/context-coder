@@ -1,17 +1,11 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  Tool,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+import { McpServer } from 'tmcp';
+import { ZodV3JsonSchemaAdapter } from '@tmcp/adapter-zod-v3';
 import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { getTools } from './tools.js';
-import { HandlerContext } from './types.js';
+import { getToolsForTmcp } from './tools.js';
+import type { HandlerContext, McpCallToolResult, ToolInput } from './types.js';
 import logger from './logger.js';
 import { prompts, getPromptContent } from './lib/prompts.js';
 import { getVersion } from './lib/version.js';
@@ -75,78 +69,93 @@ export const createServer = async () => {
   // Resolve to absolute path for internal use only
   const absoluteRootDir = path.resolve(ROOT_DIR);
 
-  // Get tools based on current mode
-  const tools = getTools();
+  // Create Zod adapter
+  const adapter = new ZodV3JsonSchemaAdapter();
 
-  const server = new Server(
+  // Create MCP server with proper typing
+  const server = new McpServer(
     {
       name: 'context-coder',
       version: getVersion(),
+      description: instructions || 'Context Coder: MCP server for full-context coding',
     },
     {
+      adapter,
       capabilities: {
-        prompts: {},
-        tools: {},
+        tools: { listChanged: true },
+        prompts: { listChanged: true },
+        resources: { listChanged: false },
       },
-      instructions,
     }
   );
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    // Convert ToolWithHandler[] to Tool[] for the response
-    const toolsWithoutHandlers: Tool[] = tools.map(({ handler: _handler, ...tool }) => tool);
-    return { tools: toolsWithoutHandlers };
-  });
+  // Get tools based on current mode and register them
+  const tools = getToolsForTmcp();
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
+  // Create handler context
+  const context: HandlerContext = {
+    absoluteRootDir,
+  };
 
-    // Find the tool by name
-    const tool = tools.find((t) => t.name === name);
-    if (!tool) {
-      return {
-        content: [{ type: 'text', text: `Error: Unknown tool: ${name}` }],
-        isError: true,
-      };
-    }
+  // Register tools with proper typing
+  for (const tool of tools) {
+    const handler = async (input: ToolInput): Promise<McpCallToolResult> => {
+      try {
+        const result = await tool.handler(input, context);
 
-    // Create handler context
-    const context: HandlerContext = {
-      absoluteRootDir,
+        // Handlers now return the correct format directly
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        // Return error as CallToolResult
+        return {
+          content: [{ type: 'text' as const, text: `Error: ${errorMessage}` }],
+          isError: true,
+        };
+      }
     };
 
-    // Execute the handler
-    try {
-      return await tool.handler(args, context);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      return {
-        content: [{ type: 'text', text: `Error: ${errorMessage}` }],
-        isError: true,
-      };
-    }
-  });
+    // Register tool with tmcp server using proper typing
+    server.tool(
+      {
+        name: tool.name,
+        description: tool.description,
+        schema: tool.schema,
+      },
+      handler
+    );
+  }
 
-  // Add prompt handlers
-  server.setRequestHandler(ListPromptsRequestSchema, async () => {
-    return { prompts };
-  });
+  // Register prompts
+  for (const prompt of prompts) {
+    server.prompt(
+      {
+        name: prompt.name,
+        description: prompt.description || '',
+      },
+      async () => {
+        try {
+          // For now, prompts don't take input arguments in tmcp
+          // We'll use an empty object as input
+          const messages = getPromptContent(prompt.name, {});
 
-  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    const prompt = prompts.find((p) => p.name === name);
-
-    if (!prompt) {
-      throw new Error(`Unknown prompt: ${name}`);
-    }
-
-    const promptMessages = getPromptContent(name, args);
-
-    return {
-      description: prompt.description,
-      messages: promptMessages,
-    };
-  });
+          // Convert messages to tmcp format with proper content structure
+          return {
+            messages: messages.map((msg) => ({
+              role: msg.role as 'user' | 'assistant',
+              content: {
+                type: 'text' as const,
+                text: msg.content.text,
+              },
+            })),
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          throw new Error(errorMessage);
+        }
+      }
+    );
+  }
 
   const cleanup = async () => {
     // Add any cleanup logic here if needed

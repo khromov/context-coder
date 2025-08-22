@@ -2,107 +2,155 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-You have access to both Claude Code's built-in file tools and the Coco MCP for enhanced codebase analysis. Follow this workflow:
-
-1. ALWAYS start every new chat by calling get_codebase_size and get_codebase MCP tools to ingest and understand the full project context
-2. Use Coco's codebase analysis as your primary reference - avoid reading files since you already have the complete codebase, only read file if you are missing something or if the user specifically requests it.
-3. Remember: Coco gives you full codebase context, Claude Code gives you precise editing control - use both strategically
-
 ## Project Overview
 
-Coco MCP (Context Coder) is a secure file system access server implementing the Model Context Protocol. It provides AI models with controlled file operations within designated directories.
+Context Coder (internally "context-coder", formerly "safe-file-mcp") is an MCP (Model Context Protocol) server that provides AI models with tools to load entire codebases into LLM context. It enables AI assistants to understand project structure and write code that fits existing patterns.
 
-## Essential Commands
+The project is built with TypeScript and uses the `tmcp` library for MCP server implementation, offering both HTTP and stdio transport modes.
 
-**Development:**
+## Key Architecture
+
+### Core Components
+
+- **`src/index.ts`**: CLI entry point with commander.js, handles server startup and mode selection
+- **`src/mcp.ts`**: MCP server creation using tmcp library with Zod schema validation
+- **`src/tools.ts`**: Tool registry with mini/full mode support and handler management
+- **`src/handlers/`**: Individual tool implementations (get_codebase, write_file, etc.)
+- **`src/codebase-digest.ts`**: Core codebase analysis and markdown generation logic
+- **`src/schemas.ts`**: Zod schemas for all tool input validation
+
+### Operating Modes
+
+- **Mini mode**: Core analysis tools only (`get_codebase_size`, `get_codebase`, `get_codebase_top_largest_files`)
+- **Full mode**: All tools including file operations, directory management, and command execution
+- **Edit mode**: Adds `edit_file` tool for line-based partial edits alongside `write_file`
+
+### Transport Modes
+
+- **HTTP mode**: Default, runs on port 3001, used with Claude Desktop + mcp-remote
+- **stdio mode**: Direct stdin/stdout communication, used with Claude Code and direct integrations
+
+## Development Commands
+
+### Build and Start
 
 ```bash
-npm run dev          # Start development server with auto-reload (port 3002, ./mount sandbox)
-npm run build        # Compile TypeScript to dist/
-npm start            # Run production server (port 3001)
+npm run build              # Compile TypeScript to dist/
+npm start                  # Start in HTTP mode
+npm run start:stdio        # Start in stdio mode
+npm run start:edit         # Start with edit-file mode enabled
 ```
 
-**Testing:**
+### Development
 
 ```bash
-npm test             # Run all tests
-npm run test:watch   # Run tests in watch mode - never run this, it will get stuck
-npm run test:coverage # Generate coverage report
+npm run dev                # Auto-reload HTTP mode (uses ./mount directory)
+npm run dev:stdio          # Auto-reload stdio mode
+npm run dev:edit           # Auto-reload with edit mode
+npm run watch              # TypeScript watch mode
 ```
 
-**Code Quality:**
+### Testing and Quality
 
 ```bash
-npm run format       # Format code with Prettier - run this when you finished with all your changes
-npm run format:check # Check code formatting
-npm run watch        # TypeScript compiler in watch mode
+npm test                   # Run full test suite with build
+npm run test:watch         # Watch mode testing
+npm run test:coverage      # Generate coverage report
+npm run lint               # ESLint check
+npm run lint:fix           # ESLint auto-fix
+npm run format             # Prettier format
+npm run format:check       # Prettier check only
 ```
 
-## Architecture
+### CLI Tools
 
-The server follows a layered architecture:
+```bash
+npx context-coder ls                    # List files that will be analyzed
+npx context-coder ls --sort-by path     # Sort by path instead of size
+npx context-coder --mini --stdio        # Run in mini mode with stdio
+```
 
-1. **Transport Layer** (`src/streamableHttp.ts`): Handles HTTP/SSE communication with session management
-2. **MCP Layer** (`src/mcp.ts`): Implements the Model Context Protocol server with 11 file operation tools
-3. **Tool Layer** (`src/tools.ts` + `src/handlers/`): Modular handlers for each MCP tool with Zod validation
-4. **File Operations** (`src/file-operations.ts`): Secure file system utilities with path validation
-5. **Codebase Digest** (`src/codebase-digest.ts`): Handles AI-digest integration for token counting and file analysis
+## File Structure Conventions
 
-**Key Design Decisions:**
+### Handler Pattern
 
-- All file paths must be relative (starting with "./")
-- Parent directory access ("../") is blocked for security
-- In development mode, operations are sandboxed to the `./mount` directory
-- The server validates all paths to prevent directory traversal attacks
-- Large codebases are handled with token counting and size warnings
+All tool handlers in `src/handlers/` follow this pattern:
 
-## Development Notes
+- Import schema from `../schemas.js`
+- Validate input with `schema.safeParse(args)`
+- Use `validateRelativePath()` and `resolveRelativePath()` from `./utils.js`
+- Return `HandlerResponse` with `content: [{ type: 'text', text: string }]` format
+- Log operations with structured logging
 
-When working on this codebase:
+### Schema Definitions
 
-1. **Path Handling**: Always use the `validatePath()` function from file-operations.ts when dealing with user-provided paths
-2. **Error Messages**: Include the actual error details in responses to help with debugging
-3. **Testing**: Add tests in `src/__tests__/` following the existing Jest/TypeScript setup with ESM support
-4. **Handler Pattern**: New MCP tools should follow the modular handler pattern - create handler in `src/handlers/` and register in `src/tools.ts`
-5. **Docker**: The Dockerfile uses a multi-stage build. Test Docker changes with `docker-compose up --build`
-6. **Token Limits**: Be aware of Claude (150k) and ChatGPT (128k) token limits when processing codebases
-7. **Mode Selection**: Server runs in 'mini' mode by default. Use `--full` flag or set `CONTEXT_CODER_MODE=full` for all tools
-8. **Development Sandbox**: In dev mode (`COCO_DEV=true`), file operations are sandboxed to `./mount` directory
-9. **Git Hooks**: The project uses the `pre-commit` package to automatically format code before commits (configured in package.json)
+Zod schemas in `src/schemas.ts` use:
+
+- Relative path validation with optional `./` prefix
+- Default values with `.default()` and `.optional()`
+- Descriptive `.describe()` for MCP tool documentation
+
+### Test Structure
+
+- `src/__tests__/` for main test files
+- `src/handlers/__tests__/` for handler-specific tests
+- `test-utils.ts` provides common test utilities
+- Tests use temporary directories and cleanup
 
 ## Environment Variables
 
-All environment variables use the `COCO_` prefix for consistency:
+### Core Configuration
 
-- `COCO_PORT`: Server port (default: 3001) - can also be set via `--port` CLI flag
-- `COCO_DEV`: Set to "true" for development mode (uses ./mount sandbox)
-- `COCO_MCP_TRANSPORT`: Transport protocol - "http" or "stdio" (default: "http")
-- `COCO_BUILD_TYPE`: Docker build variant - "regular", "mini", or "edit"
-- `CONTEXT_CODER_MODE`: Runtime mode - "mini" or "full" (set by CLI flags)
-- `CONTEXT_CODER_EDIT_MODE`: Enable edit_file tool when set to "true"
+- `CONTEXT_CODER_MODE`: `mini` | `full` (set by CLI flags)
+- `CONTEXT_CODER_EDIT_MODE`: `true` to enable edit_file tool
+- `COCO_MCP_TRANSPORT`: `http` | `stdio`
+- `COCO_PORT`: Override default port 3001
+- `COCO_DEV`: `true` uses `./mount` instead of `./`
 
-## Available Tools
+### Token Limits
 
-The server exposes 11 MCP tools for file operations (mini mode has 3, full mode adds 8 more):
+- `COCO_CLAUDE_TOKEN_LIMIT`: Override default 150000
+- `COCO_GPT_TOKEN_LIMIT`: Override default 128000
 
-**Mini Mode Tools (always available):**
+## Important Implementation Details
 
-- `get_codebase_size` - Check codebase size and token counts before processing
-- `get_codebase` - Generate paginated summary of entire codebase
-- `get_codebase_top_largest_files` - Get top X largest files for .cocoignore optimization
+### Path Handling
 
-**Full Mode Additional Tools:**
+All file operations use relative paths that are:
 
-- File operations: `read_file`, `write_file`, `move_file`
-- Directory operations: `list_directory`, `directory_tree`, `create_directory`
-- Search: `search_files`
-- Command execution: `execute_command`
-- Line-based editing: `edit_file` (when edit mode is enabled)
+1. Validated with `validateRelativePath()` to prevent directory traversal
+2. Resolved with `resolveRelativePath()` against the configured root directory
+3. Support both `file.txt` and `./file.txt` formats
 
-**Important Workflow:**
+### Codebase Analysis
 
-1. Always run `get_codebase_size` FIRST to check if the codebase is within token limits
-2. Then run `get_codebase` to get the actual code content
-3. Use other tools only when specifically needed
+The `generateCodebaseDigest()` function:
 
-See `src/mcp.ts` for the complete tool implementations.
+- Respects `.cocoignore` files (gitignore format)
+- Provides pagination for large codebases
+- Calculates token estimates for Claude and GPT models
+- Excludes common build artifacts and dependencies
+
+### MCP Integration
+
+- Uses `tmcp` library with Zod adapter for schema validation
+- Supports both tools and prompts
+- Handles proper error formatting for MCP responses
+- Provides structured logging for debugging
+
+## Docker and Deployment
+
+The project builds three Docker variants:
+
+- `full`: Complete toolset with write_file
+- `mini`: Analysis tools only
+- `edit`: Full toolset with edit_file enabled
+
+Build targets are controlled by `COCO_BUILD_TYPE` environment variable in Docker builds.
+
+## Testing Strategy
+
+- Unit tests for all handlers with temporary file systems
+- Integration tests for server startup in both transport modes
+- Coverage collection excludes dist/ and node_modules/
+- Jest configured for ESModules with ts-jest

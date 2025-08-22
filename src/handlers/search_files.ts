@@ -1,12 +1,12 @@
 import { SearchFilesArgsSchema } from '../schemas.js';
-import { HandlerContext, HandlerResponse } from '../types.js';
+import type { HandlerContext, HandlerResponse, ToolInput } from '../types.js';
 import { validateRelativePath, resolveRelativePath } from './utils.js';
 import { searchFiles } from '../file-operations.js';
 import path from 'path';
 import logger from '../logger.js';
 
 export async function handleSearchFiles(
-  args: any,
+  args: ToolInput,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   const parsed = SearchFilesArgsSchema.safeParse(args);
@@ -28,7 +28,7 @@ export async function handleSearchFiles(
     return relPath;
   });
 
-  const result = {
+  const result: HandlerResponse = {
     content: [
       {
         type: 'text',

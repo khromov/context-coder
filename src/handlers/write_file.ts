@@ -1,5 +1,5 @@
 import { WriteFileArgsSchema } from '../schemas.js';
-import { HandlerContext, HandlerResponse } from '../types.js';
+import type { HandlerContext, HandlerResponse, ToolInput } from '../types.js';
 import { validateRelativePath, resolveRelativePath, formatDisplayPath } from './utils.js';
 import { writeFileSecure } from '../file-operations.js';
 import fs from 'fs/promises';
@@ -7,7 +7,7 @@ import path from 'path';
 import logger from '../logger.js';
 
 export async function handleWriteFile(
-  args: any,
+  args: ToolInput,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   logger.debug('✏️ write_file handler started');
@@ -27,7 +27,7 @@ export async function handleWriteFile(
 
   const displayPath = formatDisplayPath(parsed.data.path);
 
-  const result = {
+  const result: HandlerResponse = {
     content: [{ type: 'text', text: `Successfully wrote to ${displayPath}` }],
   };
 

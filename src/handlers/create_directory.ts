@@ -1,11 +1,11 @@
 import { CreateDirectoryArgsSchema } from '../schemas.js';
-import { HandlerContext, HandlerResponse } from '../types.js';
+import type { HandlerContext, HandlerResponse, ToolInput } from '../types.js';
 import { validateRelativePath, resolveRelativePath, formatDisplayPath } from './utils.js';
 import fs from 'fs/promises';
 import logger from '../logger.js';
 
 export async function handleCreateDirectory(
-  args: any,
+  args: ToolInput,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   logger.debug('📁 create_directory handler started');
@@ -34,7 +34,7 @@ export async function handleCreateDirectory(
     ? `Directory ${displayPath} already exists`
     : `Successfully created directory ${displayPath}`;
 
-  const result = {
+  const result: HandlerResponse = {
     content: [{ type: 'text', text: message }],
   };
 
