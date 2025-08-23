@@ -248,7 +248,7 @@ You have access to both Claude Code's built-in file tools and the Context Coder 
 
 ## Limiting which files are including when fetching the codebase
 
-Context Coder works best in small and medium-sized repositories, as it's limited to the maximum context of your LLM (in the case of Claude Sonnet/Opus 4, that's 200,000 tokens). Your whole codebase might not fit, and for this case you have two options:
+Context Coder works best in small and medium-sized repositories, as it's limited to the maximum context of your LLM (in the case of Claude Sonnet/Opus 4, that's 200,000 tokens). Your whole codebase might not fit, and for this case you have two options.
 
 ### Excluding Files (.cocoignore)
 
@@ -258,23 +258,11 @@ Create a `.cocoignore` file in the root of your project. This file works similar
 
 Create a `.cocominify` file in the root of your project to include files with placeholder content instead of excluding them entirely. This saves tokens while still informing the AI that the files exist and allows the AI to read them with the `read_file` tool if necessary. This is useful for large generated files, compiled assets, or files that don't need their full content in the AI context.
 
-Example `.cocominify` file:
-
-```
-# Minified JavaScript files
-*.min.js
-*.min.css
-
-# Large generated files
-dist/*
-build/*
-
-# Large data files
-*.csv
-*.json
-```
-
 Many common build artifacts and folders are already automatically excluded (such as `node_modules`). The LLM can also help you with this - ask it to run the `get_codebase_top_largest_files` tool and suggest files that are large and/or suitable for inclusion in a `.cocoignore` or `.cocominify` file.
+
+### Combining
+
+You can have both a `.cocoignore` and a `.cocominify` file in the same repo.
 
 ## Configuration
 

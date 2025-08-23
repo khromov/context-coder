@@ -123,4 +123,4 @@ export const getMinifyFileDescription: MinifyFileDescriptionCallback = (metadata
     `This file has been minified to save tokens. The file exists at the above location.\n` +
     `You can use the read_file tool to read the actual content if necessary.\n\n`
   );
-}
+};
