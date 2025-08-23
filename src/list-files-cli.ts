@@ -103,7 +103,7 @@ export async function listFiles(options: ListFilesOptions) {
       const isMinified = minifiedFiles.has(file.path);
       if (isMinified) hasMinifiedFiles = true;
 
-      const minifyIndicator = isMinified ? ' *' : '';
+      const minifyIndicator = isMinified ? ' M' : '';
       console.log(
         `${(index + 1).toString().padStart(4)}. ${displayPath}${minifyIndicator}${' '.repeat(50 - displayPath.length - minifyIndicator.length)} ${sizeInKB.padStart(10)} KB`
       );
@@ -111,7 +111,7 @@ export async function listFiles(options: ListFilesOptions) {
 
     // Add legend if there are minified files
     if (hasMinifiedFiles) {
-      console.log('\n* = File content has been minified to save tokens');
+      console.log('\nM = File content has been minified by .cocominify rules');
     }
   } catch (error) {
     console.error(
