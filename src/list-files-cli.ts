@@ -106,7 +106,7 @@ export async function listFiles(options: ListFilesOptions) {
       const isMinified = minifiedFiles.has(file.path);
       if (isMinified) hasMinifiedFiles = true;
 
-      const minifyIndicator = isMinified ? '*' : '';
+      const minifyIndicator = isMinified ? ' *' : '';
       console.log(
         `${(index + 1).toString().padStart(4)}. ${displayPath}${minifyIndicator}${' '.repeat(50 - displayPath.length - minifyIndicator.length)} ${sizeInKB.padStart(10)} KB`
       );

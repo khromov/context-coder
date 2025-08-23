@@ -1,5 +1,6 @@
 import path from 'path';
 import fs from 'fs/promises';
+import type { MinifyFileDescriptionCallback } from 'ai-digest';
 
 export function validateRelativePath(relativePath: string): void {
   // Handle empty path as current directory
@@ -116,7 +117,9 @@ export async function getMinifyFile(inputDir: string): Promise<string | undefine
  * @param metadata - File metadata from ai-digest
  * @returns Custom minify message with read_file instruction
  */
-export function getMinifyFileDescription(metadata): string {
+export function getMinifyFileDescription(
+  metadata: Parameters<MinifyFileDescriptionCallback>[0]
+): string {
   return (
     `# ${metadata.displayPath}\n\n` +
     `This file has been minified to save tokens. The file exists at the above location.\n` +
