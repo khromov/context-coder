@@ -105,7 +105,7 @@ export async function listFiles(options: ListFilesOptions) {
 
       const minifyIndicator = isMinified ? ' M' : '';
       console.log(
-        `${(index + 1).toString().padStart(4)}. ${displayPath}${minifyIndicator}${' '.repeat(50 - displayPath.length - minifyIndicator.length)} ${sizeInKB.padStart(10)} KB`
+        `${(index + 1).toString().padStart(4)}. ${displayPath}${minifyIndicator}${' '.repeat(Math.max(0, 50 - displayPath.length - minifyIndicator.length))} ${sizeInKB.padStart(10)} KB`
       );
     });
 
