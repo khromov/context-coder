@@ -16,10 +16,8 @@ interface ListFilesOptions {
 export async function listFiles(options: ListFilesOptions) {
   const { sortBy, reverse, directory } = options;
 
-  // Resolve directory path, accounting for dev mode
   let resolvedDirectory = directory;
   if (process.env.COCO_DEV === 'true' && directory === '.') {
-    // In dev mode, default to the mount directory instead of current directory
     resolvedDirectory = './mount';
   }
   const inputDir = path.resolve(resolvedDirectory);
