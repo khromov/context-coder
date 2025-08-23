@@ -22,6 +22,7 @@
     "dev": "COCO_PORT=3002 COCO_DEV=true nodemon",
     "dev:stdio": "COCO_PORT=3002 COCO_DEV=true COCO_MCP_TRANSPORT=stdio nodemon --exec 'node dist/index.js --stdio'",
     "dev:edit": "COCO_PORT=3002 COCO_DEV=true nodemon --exec 'node dist/index.js --edit-file-mode'",
+    "dev:ls": "COCO_PORT=3002 COCO_DEV=true nodemon --exec 'node dist/index.js ls'",
     "test": "npm run build && NODE_OPTIONS=\"--experimental-vm-modules\" jest",
     "test:watch": "NODE_OPTIONS=\"--experimental-vm-modules\" jest --watch",
     "test:coverage": "NODE_OPTIONS=\"--experimental-vm-modules\" jest --coverage",

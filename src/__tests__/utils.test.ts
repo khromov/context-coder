@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { formatDisplayPath } from '../handlers/utils.js';
-import { validateRelativePath, getIgnoreFile, getMinifyFile } from '../handlers/utils.js';
+import {
+  validateRelativePath,
+  getIgnoreFile,
+  getMinifyFile,
+  getMinifyFileDescription,
+} from '../handlers/utils.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { mkdtemp, rm } from 'fs/promises';
@@ -148,5 +153,39 @@ describe('getMinifyFile', () => {
   it('should return undefined when .cocominify does not exist', async () => {
     const result = await getMinifyFile(tempDir);
     expect(result).toBeUndefined();
+  });
+});
+
+describe('getMinifyFileDescription', () => {
+  it('should return correct minify description with read_file instruction', () => {
+    const metadata = {
+      displayPath: 'src/large-file.js',
+      filePath: '/full/path/to/src/large-file.js',
+      extension: 'js',
+      fileType: 'JavaScript',
+    };
+
+    const result = getMinifyFileDescription(metadata);
+
+    expect(result).toContain('# src/large-file.js');
+    expect(result).toContain('This file has been minified to save tokens');
+    expect(result).toContain(
+      'You can use the read_file tool to read the actual content if necessary'
+    );
+    expect(result).toContain('The file exists at the above location');
+  });
+
+  it('should handle different file paths correctly', () => {
+    const metadata = {
+      displayPath: 'dist/bundle.min.css',
+      filePath: '/project/dist/bundle.min.css',
+      extension: 'css',
+      fileType: 'CSS',
+    };
+
+    const result = getMinifyFileDescription(metadata);
+
+    expect(result).toContain('# dist/bundle.min.css');
+    expect(result).toMatch(/^# dist\/bundle\.min\.css\n\n/);
   });
 });

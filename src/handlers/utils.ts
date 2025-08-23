@@ -110,3 +110,16 @@ export async function getMinifyFile(inputDir: string): Promise<string | undefine
     return undefined;
   }
 }
+
+/**
+ * Custom minify file description that tells the AI it can read the file
+ * @param metadata - File metadata from ai-digest
+ * @returns Custom minify message with read_file instruction
+ */
+export function getMinifyFileDescription(metadata): string {
+  return (
+    `# ${metadata.displayPath}\n\n` +
+    `This file has been minified to save tokens. The file exists at the above location.\n` +
+    `You can use the read_file tool to read the actual content if necessary.\n\n`
+  );
+}
