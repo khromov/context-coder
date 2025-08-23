@@ -117,9 +117,7 @@ export async function getMinifyFile(inputDir: string): Promise<string | undefine
  * @param metadata - File metadata from ai-digest
  * @returns Custom minify message with read_file instruction
  */
-export function getMinifyFileDescription(
-  metadata: Parameters<MinifyFileDescriptionCallback>[0]
-): string {
+export const getMinifyFileDescription: MinifyFileDescriptionCallback = (metadata) => {
   return (
     `# ${metadata.displayPath}\n\n` +
     `This file has been minified to save tokens. The file exists at the above location.\n` +
