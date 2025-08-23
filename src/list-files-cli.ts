@@ -38,9 +38,9 @@ export async function listFiles(options: ListFilesOptions) {
     // Check for .cocominify file
     const minifyFile = await getMinifyFile(inputDir);
     if (minifyFile) {
-      console.log(`🗜️ Using minify file: ${minifyFile}`);
+      console.log(`🤏 Using minify file: ${minifyFile}`);
     } else {
-      console.log(`🗜️ Using default minify patterns (.aidigestminify)`);
+      console.log(`🤏 Using default minify patterns (.aidigestminify)`);
     }
 
     // Get file statistics
