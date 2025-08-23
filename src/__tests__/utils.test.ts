@@ -1,6 +1,15 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { formatDisplayPath } from '../handlers/utils.js';
-import { validateRelativePath } from '../handlers/utils.js';
+import {
+  validateRelativePath,
+  getIgnoreFile,
+  getMinifyFile,
+  getMinifyFileDescription,
+} from '../handlers/utils.js';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
 
 describe('formatDisplayPath', () => {
   it('should remove leading ./ from paths', () => {
@@ -94,5 +103,89 @@ describe('validateRelativePath', () => {
     expect(() => validateRelativePath('src/routes/../[...rest]/+page.svelte')).toThrow(
       'Path cannot contain parent directory references'
     );
+  });
+});
+
+describe('getIgnoreFile', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'coco-test-ignore-'));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('should return .cocoignore when it exists', async () => {
+    const cocoignorePath = path.join(tempDir, '.cocoignore');
+    await fs.writeFile(cocoignorePath, 'test\n*.log');
+
+    const result = await getIgnoreFile(tempDir);
+    expect(result).toBe('.cocoignore');
+  });
+
+  it('should return undefined when .cocoignore does not exist', async () => {
+    const result = await getIgnoreFile(tempDir);
+    expect(result).toBeUndefined();
+  });
+});
+
+describe('getMinifyFile', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'coco-test-minify-'));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('should return .cocominify when it exists', async () => {
+    const cocominifyPath = path.join(tempDir, '.cocominify');
+    await fs.writeFile(cocominifyPath, '*.min.js\ndist/*');
+
+    const result = await getMinifyFile(tempDir);
+    expect(result).toBe('.cocominify');
+  });
+
+  it('should return undefined when .cocominify does not exist', async () => {
+    const result = await getMinifyFile(tempDir);
+    expect(result).toBeUndefined();
+  });
+});
+
+describe('getMinifyFileDescription', () => {
+  it('should return correct minify description with read_file instruction', () => {
+    const metadata = {
+      displayPath: 'src/large-file.js',
+      filePath: '/full/path/to/src/large-file.js',
+      extension: 'js',
+      fileType: 'JavaScript',
+    };
+
+    const result = getMinifyFileDescription(metadata);
+
+    expect(result).toContain('# src/large-file.js');
+    expect(result).toContain('This file has been minified to save tokens');
+    expect(result).toContain(
+      'You can use the read_file tool to read the actual content if necessary'
+    );
+    expect(result).toContain('The file exists at the above location');
+  });
+
+  it('should handle different file paths correctly', () => {
+    const metadata = {
+      displayPath: 'dist/bundle.min.css',
+      filePath: '/project/dist/bundle.min.css',
+      extension: 'css',
+      fileType: 'CSS',
+    };
+
+    const result = getMinifyFileDescription(metadata);
+
+    expect(result).toContain('# dist/bundle.min.css');
+    expect(result).toMatch(/^# dist\/bundle\.min\.css\n\n/);
   });
 });

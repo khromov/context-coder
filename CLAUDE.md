@@ -89,7 +89,7 @@ The server exposes 11 MCP tools for file operations (mini mode has 3, full mode 
 
 - `get_codebase_size` - Check codebase size and token counts before processing
 - `get_codebase` - Generate paginated summary of entire codebase
-- `get_codebase_top_largest_files` - Get top X largest files for .cocoignore optimization
+- `get_codebase_top_largest_files` - Get top X largest files for .cocoignore/.cocominify optimization
 
 **Full Mode Additional Tools:**
 

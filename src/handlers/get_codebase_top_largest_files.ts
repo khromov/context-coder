@@ -4,6 +4,7 @@ import {
   validateRelativePath,
   resolveRelativePath,
   getIgnoreFile,
+  getMinifyFile,
   normalizeDisplayPath,
 } from './utils.js';
 import aiDigest from 'ai-digest';
@@ -32,12 +33,19 @@ export async function handleGetCodebaseTopLargestFiles(
       `📋 get_codebase_top_largest_files using ignore file: ${ignoreFile || '.aidigestignore (default)'}`
     );
 
+    // Check for .cocominify file
+    const minifyFile = await getMinifyFile(absolutePath);
+    logger.info(
+      `📋 get_codebase_top_largest_files using minify file: ${minifyFile || '.aidigestminify (default)'}`
+    );
+
     // Get file statistics without content
     const stats = await aiDigest.getFileStats({
       inputDir: absolutePath,
       ignoreFile,
+      minifyFile,
       silent: true,
-      additionalDefaultIgnores: ['.cocoignore'],
+      additionalDefaultIgnores: ['.cocoignore', '.cocominify'],
     });
 
     // Sort files by size (largest first) - they should already be sorted by ai-digest

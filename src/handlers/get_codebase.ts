@@ -1,6 +1,11 @@
 import { GetCodebaseArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
-import { validateRelativePath, resolveRelativePath, getIgnoreFile } from './utils.js';
+import {
+  validateRelativePath,
+  resolveRelativePath,
+  getIgnoreFile,
+  getMinifyFile,
+} from './utils.js';
 import { generateCodebaseDigest } from '../codebase-digest.js';
 import logger from '../logger.js';
 
@@ -24,6 +29,10 @@ export async function handleGetCodebase(
     // Check for .cocoignore file and log which one will be used
     const ignoreFile = await getIgnoreFile(absolutePath);
     logger.info(`📋 get_codebase using ignore file: ${ignoreFile || '.aidigestignore (default)'}`);
+
+    // Check for .cocominify file and log which one will be used
+    const minifyFile = await getMinifyFile(absolutePath);
+    logger.info(`📋 get_codebase using minify file: ${minifyFile || '.aidigestminify (default)'}`);
 
     logger.debug(`Generating codebase digest for path: ${absolutePath}`);
 

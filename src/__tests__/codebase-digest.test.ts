@@ -428,4 +428,42 @@ describe('getCodebaseSize', () => {
       await fs.rm(MARKDOWN_DIR, { recursive: true, force: true });
     }
   }, 10000); // 10 second timeout
+
+  it('should use .cocominify when it exists and show custom minify message', async () => {
+    const COCOMINIFY_DIR = path.join(__dirname, 'test-cocominify-temp');
+    await fs.mkdir(COCOMINIFY_DIR, { recursive: true });
+
+    try {
+      // Create some test files
+      await fs.writeFile(path.join(COCOMINIFY_DIR, 'regular.js'), 'console.log("regular file");');
+      await fs.writeFile(path.join(COCOMINIFY_DIR, 'large.min.js'), 'var a=1;'.repeat(1000)); // Large minified file
+
+      // Create a .cocominify file that minifies *.min.js files
+      const cocominifyContent = '*.min.js\n';
+      await fs.writeFile(path.join(COCOMINIFY_DIR, '.cocominify'), cocominifyContent);
+
+      const result = await generateCodebaseDigest({
+        inputDir: COCOMINIFY_DIR,
+        page: 1,
+      });
+
+      // Should include the regular file content
+      expect(result.content).toContain('console.log("regular file");');
+
+      // Should include the minified file but with custom placeholder message
+      expect(result.content).toContain('# large.min.js');
+      expect(result.content).toContain('This file has been minified to save tokens');
+      expect(result.content).toContain(
+        'You can use the read_file tool to read the actual content if necessary'
+      );
+
+      // Should NOT include the actual content of the minified file
+      expect(result.content).not.toContain('var a=1;var a=1;var a=1;');
+
+      // Should NOT include the .cocominify file itself (it should be excluded)
+      expect(result.content).not.toContain('.cocominify');
+    } finally {
+      await fs.rm(COCOMINIFY_DIR, { recursive: true, force: true });
+    }
+  }, 10000); // 10 second timeout
 });

@@ -1,6 +1,11 @@
 import aiDigest from 'ai-digest';
 import path from 'path';
-import { getIgnoreFile, normalizeDisplayPath } from './handlers/utils.js';
+import {
+  getIgnoreFile,
+  getMinifyFile,
+  getMinifyFileDescription,
+  normalizeDisplayPath,
+} from './handlers/utils.js';
 
 interface ListFilesOptions {
   sortBy: 'size' | 'path';
@@ -11,8 +16,9 @@ interface ListFilesOptions {
 export async function listFiles(options: ListFilesOptions) {
   const { sortBy, reverse, directory } = options;
 
-  // Resolve directory path
-  const inputDir = path.resolve(directory);
+  const resolvedDirectory =
+    process.env.COCO_DEV === 'true' && directory === '.' ? './mount' : directory;
+  const inputDir = path.resolve(resolvedDirectory);
 
   console.log(`📋 Listing files in: ${inputDir}`);
 
@@ -25,15 +31,49 @@ export async function listFiles(options: ListFilesOptions) {
       console.log(`🚫 Using default ignore patterns (.aidigestignore)`);
     }
 
+    // Check for .cocominify file
+    const minifyFile = await getMinifyFile(inputDir);
+    if (minifyFile) {
+      console.log(`🤏 Using minify file: ${minifyFile}`);
+    } else {
+      console.log(`🤏 Using default minify patterns (.aidigestminify)`);
+    }
+
     // Get file statistics
     const stats = await aiDigest.getFileStats({
       inputDir,
       ignoreFile,
+      minifyFile,
       silent: true,
-      additionalDefaultIgnores: ['.cocoignore'],
+      additionalDefaultIgnores: ['.cocoignore', '.cocominify'],
     });
 
     const files = stats.files || [];
+
+    // Use the shared minify file description function
+    const minifyFileDescription = getMinifyFileDescription;
+
+    // Also get the detailed content to identify which files are minified
+    const { files: contentFiles } = await aiDigest.generateDigestFiles({
+      inputDir,
+      ignoreFile,
+      minifyFile,
+      minifyFileDescription,
+      silent: true,
+      additionalDefaultIgnores: ['.cocoignore', '.cocominify'],
+    });
+
+    // Create a set of minified file names for quick lookup
+    const minifiedFiles = new Set<string>();
+    //TODO: ai-digest should really send along this info rather than doing this
+    contentFiles.forEach((file) => {
+      if (
+        file.content.includes('The file exists but has been excluded') || // Default from ai-digest
+        file.content.includes('This file has been minified to save tokens') // context-coder custom message
+      ) {
+        minifiedFiles.add(file.fileName);
+      }
+    });
 
     // Sort files
     if (sortBy === 'size') {
@@ -56,13 +96,23 @@ export async function listFiles(options: ListFilesOptions) {
     console.log(`\n📁 Files (sorted by ${sortBy}${reverse ? ' ascending' : ' descending'}):`);
     console.log('='.repeat(80));
 
+    let hasMinifiedFiles = false;
     files.forEach((file, index) => {
       const sizeInKB = (file.sizeInBytes / 1024).toFixed(2);
       const displayPath = normalizeDisplayPath(file.path, inputDir);
+      const isMinified = minifiedFiles.has(file.path);
+      if (isMinified) hasMinifiedFiles = true;
+
+      const minifyIndicator = isMinified ? ' M' : '';
       console.log(
-        `${(index + 1).toString().padStart(4)}. ${displayPath.padEnd(50)} ${sizeInKB.padStart(10)} KB`
+        `${(index + 1).toString().padStart(4)}. ${displayPath}${minifyIndicator}${' '.repeat(50 - displayPath.length - minifyIndicator.length)} ${sizeInKB.padStart(10)} KB`
       );
     });
+
+    // Add legend if there are minified files
+    if (hasMinifiedFiles) {
+      console.log('\nM = File content has been minified by .cocominify rules');
+    }
   } catch (error) {
     console.error(
       `❌ Error listing files: ${error instanceof Error ? error.message : String(error)}`
