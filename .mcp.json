@@ -1,5 +1,5 @@
 {
-  "mcpServers": {
+  "mcpServers_DISABLED2": {
     "context-coder": {
       "command": "npx",
       "args": ["-y", "context-coder", "--mini", "--stdio"]
