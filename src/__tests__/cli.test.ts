@@ -232,6 +232,47 @@ describe('CLI with Commander', () => {
       expect(result.stdout).toContain('Total files: 0');
       expect(result.stdout).toContain('📋 Listing files in:');
     });
+
+    it('should handle files with very long paths without crashing', async () => {
+      const LONG_PATH_TEST_DIR = path.join(__dirname, 'test-long-path-temp');
+
+      // Create nested directory structure to generate long paths
+      const deepDir = path.join(LONG_PATH_TEST_DIR, 'very', 'deep', 'nested', 'directory', 'structure');
+      await fs.mkdir(deepDir, { recursive: true });
+
+      // Create files with long names that exceed 50 characters total
+      const longFileName = 'this-is-a-very-long-file-name-that-exceeds-fifty-characters.js';
+      const veryLongFileName = 'this-is-an-extremely-long-file-name-that-definitely-exceeds-fifty-characters-and-should-trigger-the-bug.js';
+      
+      await fs.writeFile(path.join(deepDir, longFileName), 'console.log("test");');
+      await fs.writeFile(path.join(deepDir, veryLongFileName), 'console.log("test");');
+      
+      // Also create a .cocominify file to test minified file indicator
+      await fs.writeFile(path.join(LONG_PATH_TEST_DIR, '.cocominify'), '*.js\nConsole.log minified');
+
+      try {
+        const result = await runCommand(`node ${CLI_PATH} ls --directory ${LONG_PATH_TEST_DIR}`);
+
+        // The command should complete successfully (exit code 0)
+        expect(result.code).toBe(0);
+        expect(result.stderr).toBe('');
+
+        // Should contain standard output elements
+        expect(result.stdout).toContain('📋 Listing files in:');
+        expect(result.stdout).toContain('📊 Summary:');
+        expect(result.stdout).toContain('Total files:');
+
+        // Should list both files without crashing
+        expect(result.stdout).toContain(longFileName);
+        expect(result.stdout).toContain(veryLongFileName);
+
+        // Should handle minified files indicator correctly
+        expect(result.stdout).toContain('Using minify file: .cocominify');
+      } finally {
+        // Clean up
+        await fs.rm(LONG_PATH_TEST_DIR, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('Unknown commands', () => {
