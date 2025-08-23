@@ -1,6 +1,6 @@
 {
   "name": "context-coder",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Context Coder: MCP server providing secure file system operations with relative path handling for AI context management",
   "license": "MIT",
   "author": "khromov",

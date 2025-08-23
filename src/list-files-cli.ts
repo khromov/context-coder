@@ -88,11 +88,6 @@ export async function listFiles(options: ListFilesOptions) {
       });
     }
 
-    console.log(`\n📊 Summary:`);
-    console.log(`- Total files: ${files.length}`);
-    console.log(`- Claude tokens: ${stats.totalClaudeTokens.toLocaleString()}`);
-    console.log(`- ChatGPT tokens: ${stats.totalGptTokens.toLocaleString()}`);
-
     console.log(`\n📁 Files (sorted by ${sortBy}${reverse ? ' ascending' : ' descending'}):`);
     console.log('='.repeat(80));
 
@@ -113,6 +108,11 @@ export async function listFiles(options: ListFilesOptions) {
     if (hasMinifiedFiles) {
       console.log('\nM = File content has been minified by .cocominify rules');
     }
+
+    console.log(`\n📊 Summary:`);
+    console.log(`- Total files: ${files.length}`);
+    console.log(`- Claude tokens: ${stats.totalClaudeTokens.toLocaleString()}`);
+    console.log(`- ChatGPT tokens: ${stats.totalGptTokens.toLocaleString()}\n`);
   } catch (error) {
     console.error(
       `❌ Error listing files: ${error instanceof Error ? error.message : String(error)}`
