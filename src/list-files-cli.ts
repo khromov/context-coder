@@ -16,10 +16,8 @@ interface ListFilesOptions {
 export async function listFiles(options: ListFilesOptions) {
   const { sortBy, reverse, directory } = options;
 
-  let resolvedDirectory = directory;
-  if (process.env.COCO_DEV === 'true' && directory === '.') {
-    resolvedDirectory = './mount';
-  }
+  const resolvedDirectory =
+    process.env.COCO_DEV === 'true' && directory === '.' ? './mount' : directory;
   const inputDir = path.resolve(resolvedDirectory);
 
   console.log(`📋 Listing files in: ${inputDir}`);
