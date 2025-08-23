@@ -67,10 +67,11 @@ export async function listFiles(options: ListFilesOptions) {
 
     // Create a set of minified file names for quick lookup
     const minifiedFiles = new Set<string>();
+    //TODO: ai-digest should really send along this info rather than doing this
     contentFiles.forEach((file) => {
       if (
-        file.content.includes('(File exists but content excluded via .aidigestminify)') ||
-        file.content.includes('This file has been minified to save tokens')
+        file.content.includes('The file exists but has been excluded') || // Default from ai-digest
+        file.content.includes('This file has been minified to save tokens') // context-coder custom message
       ) {
         minifiedFiles.add(file.fileName);
       }
