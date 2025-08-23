@@ -94,3 +94,19 @@ export async function getIgnoreFile(inputDir: string): Promise<string | undefine
     return undefined;
   }
 }
+
+/**
+ * Check if .cocominify file exists in the given directory
+ * @param inputDir - The directory to check for .cocominify
+ * @returns '.cocominify' if it exists, undefined otherwise (to fallback to .aidigestminify)
+ */
+export async function getMinifyFile(inputDir: string): Promise<string | undefined> {
+  try {
+    const cocoMinifyPath = path.join(inputDir, '.cocominify');
+    await fs.access(cocoMinifyPath);
+    return '.cocominify';
+  } catch {
+    // .cocominify doesn't exist, let ai-digest use default .aidigestminify
+    return undefined;
+  }
+}

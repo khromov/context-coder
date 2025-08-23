@@ -30,7 +30,7 @@ export async function listFiles(options: ListFilesOptions) {
       inputDir,
       ignoreFile,
       silent: true,
-      additionalDefaultIgnores: ['.cocoignore'],
+      additionalDefaultIgnores: ['.cocoignore', '.cocominify'],
     });
 
     const files = stats.files || [];

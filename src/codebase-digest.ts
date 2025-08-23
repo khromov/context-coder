@@ -1,5 +1,5 @@
 import aiDigest from 'ai-digest';
-import { getIgnoreFile, normalizeDisplayPath } from './handlers/utils.js';
+import { getIgnoreFile, getMinifyFile, normalizeDisplayPath } from './handlers/utils.js';
 import logger from './logger.js';
 
 export interface CodebaseDigestOptions {
@@ -37,12 +37,17 @@ export async function getCodebaseSize(options: CodebaseSizeOptions): Promise<Cod
   const ignoreFile = await getIgnoreFile(inputDir);
   logger.debug(`📋 Using ignore file: ${ignoreFile || '.aidigestignore (default)'}`);
 
+  // Check for .cocominify file
+  const minifyFile = await getMinifyFile(inputDir);
+  logger.debug(`📋 Using minify file: ${minifyFile || '.aidigestminify (default)'}`);
+
   // Get file statistics without content
   const stats = await aiDigest.getFileStats({
     inputDir,
     ignoreFile,
+    minifyFile,
     silent: true,
-    additionalDefaultIgnores: ['.cocoignore'],
+    additionalDefaultIgnores: ['.cocoignore', '.cocominify'],
   });
 
   // Sort files by size (largest first) - they should already be sorted by ai-digest
@@ -131,12 +136,27 @@ export async function generateCodebaseDigest(
   const ignoreFile = await getIgnoreFile(inputDir);
   logger.debug(`📋 Using ignore file: ${ignoreFile || '.aidigestignore (default)'}`);
 
+  // Check for .cocominify file
+  const minifyFile = await getMinifyFile(inputDir);
+  logger.debug(`📋 Using minify file: ${minifyFile || '.aidigestminify (default)'}`);
+
+  // Custom minify description that tells the AI it can read the file
+  const minifyFileDescription = (metadata: any) => {
+    return (
+      `# ${metadata.displayPath}\n\n` +
+      `This file has been minified to save tokens. The file exists at this location.\n` +
+      `You can use the read_file tool to read the actual content if necessary.\n\n`
+    );
+  };
+
   // Get individual file objects from ai-digest
   const { files } = await aiDigest.generateDigestFiles({
     inputDir,
     ignoreFile,
+    minifyFile,
+    minifyFileDescription,
     silent: true,
-    additionalDefaultIgnores: ['.cocoignore'],
+    additionalDefaultIgnores: ['.cocoignore', '.cocominify'],
   });
 
   // Build array of pages - each page is an array of file contents

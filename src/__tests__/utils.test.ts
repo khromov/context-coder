@@ -1,6 +1,10 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { formatDisplayPath } from '../handlers/utils.js';
-import { validateRelativePath } from '../handlers/utils.js';
+import { validateRelativePath, getIgnoreFile, getMinifyFile } from '../handlers/utils.js';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
 
 describe('formatDisplayPath', () => {
   it('should remove leading ./ from paths', () => {
@@ -94,5 +98,55 @@ describe('validateRelativePath', () => {
     expect(() => validateRelativePath('src/routes/../[...rest]/+page.svelte')).toThrow(
       'Path cannot contain parent directory references'
     );
+  });
+});
+
+describe('getIgnoreFile', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'coco-test-ignore-'));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('should return .cocoignore when it exists', async () => {
+    const cocoignorePath = path.join(tempDir, '.cocoignore');
+    await fs.writeFile(cocoignorePath, 'test\n*.log');
+
+    const result = await getIgnoreFile(tempDir);
+    expect(result).toBe('.cocoignore');
+  });
+
+  it('should return undefined when .cocoignore does not exist', async () => {
+    const result = await getIgnoreFile(tempDir);
+    expect(result).toBeUndefined();
+  });
+});
+
+describe('getMinifyFile', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'coco-test-minify-'));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('should return .cocominify when it exists', async () => {
+    const cocominifyPath = path.join(tempDir, '.cocominify');
+    await fs.writeFile(cocominifyPath, '*.min.js\ndist/*');
+
+    const result = await getMinifyFile(tempDir);
+    expect(result).toBe('.cocominify');
+  });
+
+  it('should return undefined when .cocominify does not exist', async () => {
+    const result = await getMinifyFile(tempDir);
+    expect(result).toBeUndefined();
   });
 });

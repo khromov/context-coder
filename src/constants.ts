@@ -1,6 +1,8 @@
 export const DEFAULT_IGNORES = [
   '.cocoignore',
+  '.cocominify',
   '.aidigestignore',
+  '.aidigestminify',
   // Node.js
   'node_modules',
   'package-lock.json',
