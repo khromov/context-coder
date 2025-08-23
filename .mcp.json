@@ -1,8 +1,25 @@
 {
   "mcpServers": {
-    "svelte-llm": {
-      "type": "sse",
-      "url": "https://svelte-llm.stanislav.garden/mcp/sse"
+    "context-coder": {
+      "command": "npx",
+      "args": ["-y", "context-coder", "--mini", "--stdio"]
+    }
+  },
+  "mcpServers_DISABLED": {
+    "context-coder": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-v",
+        "./:/app",
+        "-w",
+        "/app",
+        "-e",
+        "COCO_MCP_TRANSPORT=stdio",
+        "ghcr.io/khromov/context-coder:mini"
+      ]
     }
   }
 }
