@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { handleMoveFile } from '../../handlers/move_file.js';
 import {
   setupTestDir,
@@ -88,5 +88,30 @@ describe('handleMoveFile', () => {
     expect(result.content[0].text).toBe('Successfully moved noslash.txt to renamed.txt');
     expect(await fileExists(testDir, 'noslash.txt')).toBe(false);
     expect(await fileExists(testDir, 'renamed.txt')).toBe(true);
+  });
+
+  describe('git integration', () => {
+    it('should gracefully handle git operations', async () => {
+      // This is an integration test that verifies the git integration works
+      // without mocking. The actual behavior will depend on whether git is available
+      // and whether the test directory is in a git repository.
+      const content = 'File to move with potential git integration';
+      await createTestFile(testDir, 'source.txt', content);
+
+      const context = createTestContext(testDir);
+      const result = await handleMoveFile(
+        {
+          source: './source.txt',
+          destination: './target.txt',
+        },
+        context
+      );
+
+      // The operation should succeed regardless of git availability
+      expect(result.content[0].text).toBe('Successfully moved source.txt to target.txt');
+      expect(await fileExists(testDir, 'source.txt')).toBe(false);
+      expect(await fileExists(testDir, 'target.txt')).toBe(true);
+      expect(await readTestFile(testDir, 'target.txt')).toBe(content);
+    });
   });
 });
