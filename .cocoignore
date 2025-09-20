@@ -2,3 +2,4 @@
 .gitignore
 src/__tests__/test-*-temp/
 **/test-*-temp/
+.husky

@@ -42,7 +42,7 @@ Then add this to the Claude Desktop config and restart Claude Desktop afterwards
   "mcpServers": {
     "context-coder": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "http://localhost:3001/mcp"]
+      "args": ["-y", "supergateway", "--streamableHttp", "http://localhost:3001/mcp"]
     }
   }
 }
@@ -98,7 +98,7 @@ Then add this to the Claude Desktop config and restart Claude Desktop afterwards
   "mcpServers": {
     "context-coder": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "http://localhost:3001/mcp"]
+      "args": ["-y", "supergateway", "--streamableHttp", "http://localhost:3001/mcp"]
     }
   }
 }
@@ -207,8 +207,7 @@ For [Claude Code](https://claude.ai/code), create `.mcp.json` in your project ro
     "context-coder": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "mcp-remote", "http://localhost:3001/mcp"],
-      "env": {}
+      "args": ["-y", "supergateway", "--streamableHttp", "http://localhost:3001/mcp"]
     }
   }
 }
