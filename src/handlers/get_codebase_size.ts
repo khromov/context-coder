@@ -29,15 +29,15 @@ export async function handleGetCodebaseSize(
 
     // Check for .cocoignore file
     const ignoreFile = await getIgnoreFile(absolutePath);
-    logger.info(
-      `📋 get_codebase_size using ignore file: ${ignoreFile || '.aidigestignore (default)'}`
-    );
+    if (ignoreFile) {
+      logger.info(`📋 get_codebase_size using ignore file: ${ignoreFile}`);
+    }
 
     // Check for .cocominify file
     const minifyFile = await getMinifyFile(absolutePath);
-    logger.info(
-      `📋 get_codebase_size using minify file: ${minifyFile || '.aidigestminify (default)'}`
-    );
+    if (minifyFile) {
+      logger.info(`📋 get_codebase_size using minify file: ${minifyFile}`);
+    }
 
     // Get file statistics without content
     const stats = await aiDigest.getFileStats({
