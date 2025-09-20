@@ -3,6 +3,37 @@
 import { program } from 'commander';
 import logger, { configureLogger } from './logger.js';
 import { getVersion } from './lib/version.js';
+import { getIgnoreFile, getMinifyFile } from './handlers/utils.js';
+import path from 'path';
+
+/**
+ * Check for ignore and minify files and show helpful tips if they don't exist
+ */
+async function showStartupTips(): Promise<void> {
+  try {
+    // Determine the root directory based on environment
+    const ROOT_DIR = process.env.COCO_DEV === 'true' ? './mount' : './';
+    const absoluteRootDir = path.resolve(ROOT_DIR);
+
+    const ignoreFile = await getIgnoreFile(absoluteRootDir);
+    const minifyFile = await getMinifyFile(absoluteRootDir);
+
+    if (!ignoreFile) {
+      logger.info(
+        '💡 Tip: Did you know that you can add a .cocoignore file to exclude specific files and directories from the codebase analysis?'
+      );
+    }
+
+    if (!minifyFile) {
+      logger.info(
+        '💡 Tip: Did you know that you can add a .cocominify file to include files with placeholder content instead of excluding them entirely?'
+      );
+    }
+  } catch (error) {
+    // Silently ignore errors during tip checking - this is non-critical
+    logger.debug('Error checking for ignore/minify files during startup tips:', error);
+  }
+}
 
 // Async function to run the server
 async function runServer(options: any, _command: any) {
@@ -71,6 +102,9 @@ async function runServer(options: any, _command: any) {
       const { startHttpServer } = await import('./streamableHttp.js');
       await startHttpServer(serverPort);
     }
+
+    // Show startup tips about ignore and minify files
+    await showStartupTips();
   } catch (error) {
     logger.error('Error running server:', error);
     process.exit(1);

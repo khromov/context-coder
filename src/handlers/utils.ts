@@ -81,9 +81,9 @@ export function normalizeDisplayPath(filePath: string, inputDir: string): string
 }
 
 /**
- * Check if .cocoignore file exists in the given directory
- * @param inputDir - The directory to check for .cocoignore
- * @returns '.cocoignore' if it exists, undefined otherwise (to fallback to .aidigestignore)
+ * Check for .cocoignore or .aidigestignore file in the given directory
+ * @param inputDir - The directory to check for ignore files
+ * @returns The name of the ignore file found, or undefined if neither exists
  */
 export async function getIgnoreFile(inputDir: string): Promise<string | undefined> {
   try {
@@ -91,15 +91,22 @@ export async function getIgnoreFile(inputDir: string): Promise<string | undefine
     await fs.access(cocoIgnorePath);
     return '.cocoignore';
   } catch {
-    // .cocoignore doesn't exist, let ai-digest use default .aidigestignore
-    return undefined;
+    // .cocoignore doesn't exist, try .aidigestignore
+    try {
+      const aidigestIgnorePath = path.join(inputDir, '.aidigestignore');
+      await fs.access(aidigestIgnorePath);
+      return '.aidigestignore';
+    } catch {
+      // Neither file exists
+      return undefined;
+    }
   }
 }
 
 /**
- * Check if .cocominify file exists in the given directory
- * @param inputDir - The directory to check for .cocominify
- * @returns '.cocominify' if it exists, undefined otherwise (to fallback to .aidigestminify)
+ * Check for .cocominify or .aidigestminify file in the given directory
+ * @param inputDir - The directory to check for minify files
+ * @returns The name of the minify file found, or undefined if neither exists
  */
 export async function getMinifyFile(inputDir: string): Promise<string | undefined> {
   try {
@@ -107,8 +114,15 @@ export async function getMinifyFile(inputDir: string): Promise<string | undefine
     await fs.access(cocoMinifyPath);
     return '.cocominify';
   } catch {
-    // .cocominify doesn't exist, let ai-digest use default .aidigestminify
-    return undefined;
+    // .cocominify doesn't exist, try .aidigestminify
+    try {
+      const aidigestMinifyPath = path.join(inputDir, '.aidigestminify');
+      await fs.access(aidigestMinifyPath);
+      return '.aidigestminify';
+    } catch {
+      // Neither file exists
+      return undefined;
+    }
   }
 }
 

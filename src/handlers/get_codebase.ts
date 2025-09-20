@@ -28,11 +28,15 @@ export async function handleGetCodebase(
   try {
     // Check for .cocoignore file and log which one will be used
     const ignoreFile = await getIgnoreFile(absolutePath);
-    logger.info(`📋 get_codebase using ignore file: ${ignoreFile || '.aidigestignore (default)'}`);
+    if (ignoreFile) {
+      logger.info(`📋 get_codebase using ignore file: ${ignoreFile}`);
+    }
 
     // Check for .cocominify file and log which one will be used
     const minifyFile = await getMinifyFile(absolutePath);
-    logger.info(`📋 get_codebase using minify file: ${minifyFile || '.aidigestminify (default)'}`);
+    if (minifyFile) {
+      logger.info(`📋 get_codebase using minify file: ${minifyFile}`);
+    }
 
     logger.debug(`Generating codebase digest for path: ${absolutePath}`);
 

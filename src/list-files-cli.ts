@@ -28,7 +28,7 @@ export async function listFiles(options: ListFilesOptions) {
     if (ignoreFile) {
       console.log(`🚫 Using ignore file: ${ignoreFile}`);
     } else {
-      console.log(`🚫 Using default ignore patterns (.aidigestignore)`);
+      console.log(`🚫 No ignore file found`);
     }
 
     // Check for .cocominify file
@@ -36,7 +36,7 @@ export async function listFiles(options: ListFilesOptions) {
     if (minifyFile) {
       console.log(`🤏 Using minify file: ${minifyFile}`);
     } else {
-      console.log(`🤏 Using default minify patterns (.aidigestminify)`);
+      console.log(`🤏 No minify file found`);
     }
 
     // Get file statistics

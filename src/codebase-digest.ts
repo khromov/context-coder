@@ -40,11 +40,15 @@ export async function getCodebaseSize(options: CodebaseSizeOptions): Promise<Cod
 
   // Check for .cocoignore file
   const ignoreFile = await getIgnoreFile(inputDir);
-  logger.debug(`📋 Using ignore file: ${ignoreFile || '.aidigestignore (default)'}`);
+  if (ignoreFile) {
+    logger.debug(`📋 Using ignore file: ${ignoreFile}`);
+  }
 
   // Check for .cocominify file
   const minifyFile = await getMinifyFile(inputDir);
-  logger.debug(`📋 Using minify file: ${minifyFile || '.aidigestminify (default)'}`);
+  if (minifyFile) {
+    logger.debug(`📋 Using minify file: ${minifyFile}`);
+  }
 
   // Get file statistics without content
   const stats = await aiDigest.getFileStats({
@@ -139,11 +143,15 @@ export async function generateCodebaseDigest(
 
   // Check for .cocoignore file
   const ignoreFile = await getIgnoreFile(inputDir);
-  logger.debug(`📋 Using ignore file: ${ignoreFile || '.aidigestignore (default)'}`);
+  if (ignoreFile) {
+    logger.debug(`📋 Using ignore file: ${ignoreFile}`);
+  }
 
   // Check for .cocominify file
   const minifyFile = await getMinifyFile(inputDir);
-  logger.debug(`📋 Using minify file: ${minifyFile || '.aidigestminify (default)'}`);
+  if (minifyFile) {
+    logger.debug(`📋 Using minify file: ${minifyFile}`);
+  }
 
   // Use the shared minify file description function
   const minifyFileDescription = getMinifyFileDescription;
