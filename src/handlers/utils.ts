@@ -98,9 +98,6 @@ export async function getIgnoreFile(inputDir: string): Promise<string | undefine
       return '.aidigestignore';
     } catch {
       // Neither file exists
-      console.log(
-        '💡 Tip: Did you know that you can add a .cocoignore or .aidigestignore file to exclude specific files and directories from the codebase analysis?'
-      );
       return undefined;
     }
   }
@@ -124,9 +121,6 @@ export async function getMinifyFile(inputDir: string): Promise<string | undefine
       return '.aidigestminify';
     } catch {
       // Neither file exists
-      console.log(
-        '💡 Tip: Did you know that you can add a .cocominify or .aidigestminify file to include files with placeholder content instead of excluding them entirely?'
-      );
       return undefined;
     }
   }
