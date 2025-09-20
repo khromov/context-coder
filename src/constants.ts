@@ -88,4 +88,5 @@ export const DEFAULT_IGNORES = [
   '.vercel',
   '.netlify',
   'LICENSE',
+  //'.claude', // Claude Code garbage files
 ];

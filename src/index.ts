@@ -20,13 +20,13 @@ async function showStartupTips(): Promise<void> {
 
     if (!ignoreFile) {
       logger.info(
-        '💡 Tip: Did you know that you can add a .cocoignore or .aidigestignore file to exclude specific files and directories from the codebase analysis?'
+        '💡 Tip: Did you know that you can add a .cocoignore file to exclude specific files and directories from the codebase analysis?'
       );
     }
 
     if (!minifyFile) {
       logger.info(
-        '💡 Tip: Did you know that you can add a .cocominify or .aidigestminify file to include files with placeholder content instead of excluding them entirely?'
+        '💡 Tip: Did you know that you can add a .cocominify file to include files with placeholder content instead of excluding them entirely?'
       );
     }
   } catch (error) {
@@ -79,9 +79,6 @@ async function runServer(options: any, _command: any) {
   // Log startup information
   logger.info(`Current directory: ${process.cwd()}`);
 
-  // Show startup tips about ignore and minify files
-  await showStartupTips();
-
   // Log token limit overrides if any
   const defaultClaudeLimit = 150000;
   const defaultGptLimit = 128000;
@@ -105,6 +102,9 @@ async function runServer(options: any, _command: any) {
       const { startHttpServer } = await import('./streamableHttp.js');
       await startHttpServer(serverPort);
     }
+
+    // Show startup tips about ignore and minify files
+    await showStartupTips();
   } catch (error) {
     logger.error('Error running server:', error);
     process.exit(1);
