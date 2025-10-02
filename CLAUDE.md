@@ -43,7 +43,7 @@ npm run watch        # TypeScript compiler in watch mode
 The server follows a layered architecture:
 
 1. **Transport Layer** (`src/streamableHttp.ts`): Handles HTTP/SSE communication with session management
-2. **MCP Layer** (`src/mcp.ts`): Implements the Model Context Protocol server with 11 file operation tools
+2. **MCP Layer** (`src/mcp.ts`): Implements the Model Context Protocol server with 12 file operation tools
 3. **Tool Layer** (`src/tools.ts` + `src/handlers/`): Modular handlers for each MCP tool with Zod validation
 4. **File Operations** (`src/file-operations.ts`): Secure file system utilities with path validation
 5. **Codebase Digest** (`src/codebase-digest.ts`): Handles AI-digest integration for token counting and file analysis
@@ -83,7 +83,7 @@ All environment variables use the `COCO_` prefix for consistency:
 
 ## Available Tools
 
-The server exposes 11 MCP tools for file operations (mini mode has 3, full mode adds 8 more):
+The server exposes 12 MCP tools for file operations (mini mode has 3, full mode adds 9 more):
 
 **Mini Mode Tools (always available):**
 
@@ -95,7 +95,7 @@ The server exposes 11 MCP tools for file operations (mini mode has 3, full mode 
 
 - File operations: `read_file`, `write_file`, `move_file`
 - Directory operations: `list_directory`, `directory_tree`, `create_directory`
-- Search: `search_files`
+- Search: `search_files`, `search_file_content`
 - Command execution: `execute_command`
 - Line-based editing: `edit_file` (when edit mode is enabled)
 
@@ -104,5 +104,10 @@ The server exposes 11 MCP tools for file operations (mini mode has 3, full mode 
 1. Always run `get_codebase_size` FIRST to check if the codebase is within token limits
 2. Then run `get_codebase` to get the actual code content
 3. Use other tools only when specifically needed
+
+**Search Tools:**
+
+- `search_files` - Search for files by filename pattern
+- `search_file_content` - Search within file contents using text patterns or regex, with context around matches
 
 See `src/mcp.ts` for the complete tool implementations.

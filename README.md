@@ -300,7 +300,8 @@ volumes:
 | `list_directory`                 | List directory contents (only use when specifically asked or for debugging)                               |
 | `directory_tree`                 | Get directory structure as JSON (only use when specifically asked or for debugging)                       |
 | `move_file`                      | Move or rename files                                                                                      |
-| `search_files`                   | Search by pattern                                                                                         |
+| `search_files`                   | Search by filename pattern                                                                                |
+| `search_file_content`            | Search for text patterns within file contents - supports regex and provides context around matches        |
 | `execute_command`                | Run shell commands                                                                                        |
 
 ## Available Prompts

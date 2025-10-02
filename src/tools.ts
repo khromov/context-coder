@@ -13,6 +13,7 @@ import {
   DirectoryTreeArgsSchema,
   MoveFileArgsSchema,
   SearchFilesArgsSchema,
+  SearchFileContentArgsSchema,
   ExecuteCommandArgsSchema,
 } from './schemas.js';
 import { ToolInput, ToolHandler } from './types.js';
@@ -30,6 +31,7 @@ import { handleListDirectory } from './handlers/list_directory.js';
 import { handleDirectoryTree } from './handlers/directory_tree.js';
 import { handleMoveFile } from './handlers/move_file.js';
 import { handleSearchFiles } from './handlers/search_files.js';
+import { handleSearchFileContent } from './handlers/search_file_content.js';
 import { handleExecuteCommand } from './handlers/execute_command.js';
 
 // Extend Tool type to include handler
@@ -159,6 +161,19 @@ const additionalTools = [
       'Remember that you generally already have access to all the codebase, so there is little reason to search for files.',
     inputSchema: zodToJsonSchema(SearchFilesArgsSchema) as ToolInput,
     handler: handleSearchFiles,
+  },
+  {
+    name: 'search_file_content',
+    description:
+      'Search for text patterns within file contents across the codebase. ' +
+      "Use relative paths with or without './' prefix for the search root. " +
+      'Supports both literal text search and regular expressions. ' +
+      'Returns matching files with line numbers and context around matches. ' +
+      'By default, respects .cocoignore patterns - set includeAllFiles to true to search all files. ' +
+      'IMPORTANT: Only use this tool when the user specifically asks to search for content OR when you are totally stuck and need to find something. ' +
+      'If no results are found with includeAllFiles=false, try again with includeAllFiles=true.',
+    inputSchema: zodToJsonSchema(SearchFileContentArgsSchema) as ToolInput,
+    handler: handleSearchFileContent,
   },
   {
     name: 'execute_command',

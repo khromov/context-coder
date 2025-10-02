@@ -46,6 +46,43 @@ export const SearchFilesArgsSchema = z.object({
   excludePatterns: z.array(z.string()).optional().default([]),
 });
 
+export const SearchFileContentArgsSchema = z.object({
+  path: z.string().describe('Relative path from root directory (with or without "./" prefix)'),
+  pattern: z.string().describe('Text pattern to search for in file contents'),
+  useRegex: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Whether to treat pattern as a regular expression'),
+  caseSensitive: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Whether the search should be case-sensitive'),
+  contextLines: z
+    .number()
+    .optional()
+    .default(2)
+    .describe('Number of lines of context to show around matches (default: 2)'),
+  maxResults: z
+    .number()
+    .optional()
+    .default(100)
+    .describe('Maximum number of matches to return (default: 100)'),
+  excludePatterns: z
+    .array(z.string())
+    .optional()
+    .default([])
+    .describe('File patterns to exclude from search'),
+  includeAllFiles: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      'If false (default), respects .cocoignore file. If true, searches all files including those that would normally be ignored'
+    ),
+});
+
 export const ExecuteCommandArgsSchema = z.object({
   command: z
     .string()
