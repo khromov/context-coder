@@ -16,7 +16,7 @@ import {
   ExecuteCommandArgsSchema,
 } from './schemas.js';
 import { ToolInput, ToolHandler } from './types.js';
-import { getConfiguredPageSize } from './constants.js';
+import { getClaudeCodePageSize } from './constants.js';
 
 // Import handlers
 import { handleGetCodebaseSize } from './handlers/get_codebase_size.js';
@@ -56,7 +56,7 @@ const miniTools: ToolWithHandler[] = [
     description:
       'Generate a a merged markdown file of the entire codebase.' +
       'Results are paginated.' +
-      `If more content exists, a message will prompt to call again with the next page number. Each page holds up to ${getConfiguredPageSize()} characters. Leave the _pageSize variable empty to use the configured default (${getConfiguredPageSize()}) UNLESS you are running under Claude Code, in that case set it to 30000 to work around the Claude Code limits.`,
+      `If more content exists, a message will prompt to call again with the next page number. Leave the _pageSize variable empty UNLESS you are running under Claude Code, in that case set it to ${getClaudeCodePageSize()} to work around the Claude Code limits.`,
     inputSchema: zodToJsonSchema(GetCodebaseArgsSchema) as ToolInput,
     handler: handleGetCodebase,
   },

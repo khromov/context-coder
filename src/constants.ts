@@ -14,6 +14,24 @@ export function getConfiguredPageSize(): number {
   return Number.isNaN(parsed) || parsed <= 0 ? DEFAULT_PAGE_SIZE : parsed;
 }
 
+// Page size (in characters) suggested to the model when it runs under Claude
+// Code, which has a smaller per-page limit than the default. This value is
+// surfaced in the get_codebase tool description.
+export const DEFAULT_CLAUDE_CODE_PAGE_SIZE = 30000;
+
+/**
+ * Resolve the page size to suggest to the model when running under Claude Code.
+ * Controlled via the COCO_CLAUDE_CODE_PAGE_SIZE env var, which is set by the
+ * `--claude-code-page-size` CLI flag. Falls back to
+ * DEFAULT_CLAUDE_CODE_PAGE_SIZE when unset or invalid.
+ */
+export function getClaudeCodePageSize(): number {
+  const raw = process.env.COCO_CLAUDE_CODE_PAGE_SIZE;
+  if (!raw) return DEFAULT_CLAUDE_CODE_PAGE_SIZE;
+  const parsed = parseInt(raw, 10);
+  return Number.isNaN(parsed) || parsed <= 0 ? DEFAULT_CLAUDE_CODE_PAGE_SIZE : parsed;
+}
+
 export const DEFAULT_IGNORES = [
   '.cocoignore',
   '.cocominify',
