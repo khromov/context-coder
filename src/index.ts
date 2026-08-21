@@ -4,6 +4,7 @@ import { program } from 'commander';
 import logger, { configureLogger } from './logger.js';
 import { getVersion } from './lib/version.js';
 import { getIgnoreFile, getMinifyFile } from './handlers/utils.js';
+import { DEFAULT_PAGE_SIZE } from './constants.js';
 import path from 'path';
 
 /**
@@ -46,6 +47,11 @@ async function runServer(options: any, _command: any) {
   }
   if (options.gptTokenLimit) {
     process.env.COCO_GPT_TOKEN_LIMIT = options.gptTokenLimit.toString();
+  }
+
+  // Store page size from command line argument (don't override env if already set)
+  if (options.pageSize) {
+    process.env.COCO_PAGE_SIZE = options.pageSize.toString();
   }
 
   // Determine mode based on command line flags
@@ -93,6 +99,11 @@ async function runServer(options: any, _command: any) {
       `🎯 GPT token limit overridden: ${defaultGptLimit.toLocaleString()} -> ${options.gptTokenLimit.toLocaleString()}`
     );
   }
+  if (options.pageSize && options.pageSize !== DEFAULT_PAGE_SIZE) {
+    logger.info(
+      `📄 get_codebase page size overridden: ${DEFAULT_PAGE_SIZE.toLocaleString()} -> ${options.pageSize.toLocaleString()} characters`
+    );
+  }
 
   try {
     if (transportMode === 'stdio') {
@@ -130,6 +141,11 @@ program
   .option(
     '-g, --gpt-token-limit <number>',
     'set GPT token limit warning - going over this limit will issue a warning when calling get_codebase_size (default: 128000)',
+    parseInt
+  )
+  .option(
+    '--page-size <number>',
+    'set the get_codebase pagination page size in characters - this value is also reported to the model (default: 99000; Claude Desktop caps pages at 100000 characters)',
     parseInt
   )
   .action(runServer);

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { getConfiguredPageSize } from './constants.js';
 
 // File system schema definitions
 export const ReadFileArgsSchema = z.object({
@@ -65,7 +66,10 @@ export const GetCodebaseArgsSchema = z.object({
     .default('')
     .describe('Relative path from root directory to analyze (defaults to root)'),
   page: z.number().optional().default(1).describe('Page number for pagination (defaults to 1)'),
-  _pageSize: z.number().optional().describe('Page size for pagination (defaults to 99000)'),
+  _pageSize: z
+    .number()
+    .optional()
+    .describe(`Page size for pagination (defaults to ${getConfiguredPageSize()})`),
 });
 
 export const GetCodebaseSizeArgsSchema = z.object({

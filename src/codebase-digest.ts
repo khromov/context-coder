@@ -5,6 +5,7 @@ import {
   getMinifyFileDescription,
   normalizeDisplayPath,
 } from './handlers/utils.js';
+import { getConfiguredPageSize } from './constants.js';
 import logger from './logger.js';
 
 export interface CodebaseDigestOptions {
@@ -139,7 +140,7 @@ export async function getCodebaseSize(options: CodebaseSizeOptions): Promise<Cod
 export async function generateCodebaseDigest(
   options: CodebaseDigestOptions
 ): Promise<CodebaseDigestResult> {
-  const { inputDir, page = 1, pageSize = 99000 } = options;
+  const { inputDir, page = 1, pageSize = getConfiguredPageSize() } = options;
 
   // Check for .cocoignore file
   const ignoreFile = await getIgnoreFile(inputDir);

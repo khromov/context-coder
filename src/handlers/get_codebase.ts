@@ -7,6 +7,7 @@ import {
   getMinifyFile,
 } from './utils.js';
 import { generateCodebaseDigest } from '../codebase-digest.js';
+import { getConfiguredPageSize } from '../constants.js';
 import logger from '../logger.js';
 
 export async function handleGetCodebase(
@@ -40,8 +41,10 @@ export async function handleGetCodebase(
 
     logger.debug(`Generating codebase digest for path: ${absolutePath}`);
 
-    // Use _pageSize if provided, otherwise default to 99000
-    const pageSize = parsed.data._pageSize ?? 99000; // Claude Desktop limits to 100,000 characters per page, so we leave some buffer
+    // Use _pageSize if provided, otherwise fall back to the configured default
+    // (COCO_PAGE_SIZE / --page-size flag, defaulting to 99000).
+    // Claude Desktop limits to 100,000 characters per page, so we leave some buffer.
+    const pageSize = parsed.data._pageSize ?? getConfiguredPageSize();
 
     const result = await generateCodebaseDigest({
       inputDir: absolutePath,

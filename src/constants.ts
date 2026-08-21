@@ -1,3 +1,19 @@
+// Default page size (in characters) for get_codebase pagination.
+// Claude Desktop limits to 100,000 characters per page, so we leave some buffer.
+export const DEFAULT_PAGE_SIZE = 99000;
+
+/**
+ * Resolve the configured page size for get_codebase pagination.
+ * Controlled via the COCO_PAGE_SIZE env var, which is set by the `--page-size`
+ * CLI flag. Falls back to DEFAULT_PAGE_SIZE when unset or invalid.
+ */
+export function getConfiguredPageSize(): number {
+  const raw = process.env.COCO_PAGE_SIZE;
+  if (!raw) return DEFAULT_PAGE_SIZE;
+  const parsed = parseInt(raw, 10);
+  return Number.isNaN(parsed) || parsed <= 0 ? DEFAULT_PAGE_SIZE : parsed;
+}
+
 export const DEFAULT_IGNORES = [
   '.cocoignore',
   '.cocominify',

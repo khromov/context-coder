@@ -282,6 +282,7 @@ volumes:
 - `COCO_DEV`: "true" or "false" to mount the `./mount` folder instead of using `/app`
 - `COCO_MCP_TRANSPORT`: Set to `stdio` or `http` (default: `http`)
 - `COCO_PORT`: Override default port 3001 (HTTP mode only)
+- `COCO_PAGE_SIZE`: Override the `get_codebase` pagination page size in characters (equivalent to `--page-size` flag, default: 99000)
 - `CONTEXT_CODER_EDIT_MODE`: Set to "true" to enable `edit_file` tool (equivalent to `--edit-file-mode` flag)
 
 </details>
@@ -376,6 +377,7 @@ npx context-coder [options]
 - `-p, --port <number>` - Port to listen on (default: 3001)
 - `-c, --claude-token-limit <number>` - Set Claude token limit - useful for models with larger context windows (default: 150000)
 - `-g, --gpt-token-limit <number>` - Set GPT token limit - useful for models with larger context windows (default: 128000)
+- `--page-size <number>` - Set the `get_codebase` pagination page size in characters. This value is also reported to the model in the tool description and the `_pageSize` parameter (default: 99000; Claude Desktop caps pages at 100000 characters)
 
 **Examples:**
 
