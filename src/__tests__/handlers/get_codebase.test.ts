@@ -56,4 +56,52 @@ describe('handleGetCodebase', () => {
     // Should not contain the actual huge content
     expect(result.content[0].text.length).toBeLessThan(hugeContent.length);
   });
+
+  describe('configurable page size (COCO_PAGE_SIZE)', () => {
+    let originalPageSize: string | undefined;
+
+    beforeEach(() => {
+      originalPageSize = process.env.COCO_PAGE_SIZE;
+    });
+
+    afterEach(() => {
+      if (originalPageSize !== undefined) {
+        process.env.COCO_PAGE_SIZE = originalPageSize;
+      } else {
+        delete process.env.COCO_PAGE_SIZE;
+      }
+    });
+
+    it('includes a file that would be omitted at the default page size when COCO_PAGE_SIZE is raised', async () => {
+      // ~100k chars: omitted at the default (99000) but well under 200000
+      const bigContent = '// Big file\n' + 'x'.repeat(100000);
+      await createTestFile(testDir, 'big.js', bigContent);
+
+      const context = createTestContext(testDir);
+
+      // Default page size -> omitted
+      delete process.env.COCO_PAGE_SIZE;
+      const omitted = await handleGetCodebase({ path: './', page: 1 }, context);
+      expect(omitted.content[0].text).toContain('File omitted due to large size');
+
+      // Raised page size -> included in full
+      process.env.COCO_PAGE_SIZE = '200000';
+      const included = await handleGetCodebase({ path: './', page: 1 }, context);
+      expect(included.content[0].text).not.toContain('File omitted due to large size');
+      expect(included.content[0].text).toContain('x'.repeat(100000));
+    });
+
+    it('still honors an explicit _pageSize argument over the configured default', async () => {
+      const bigContent = '// Big file\n' + 'x'.repeat(100000);
+      await createTestFile(testDir, 'big.js', bigContent);
+
+      const context = createTestContext(testDir);
+      process.env.COCO_PAGE_SIZE = '10';
+
+      // Explicit _pageSize wins over the (tiny) configured default
+      const result = await handleGetCodebase({ path: './', page: 1, _pageSize: 200000 }, context);
+      expect(result.content[0].text).not.toContain('File omitted due to large size');
+      expect(result.content[0].text).toContain('x'.repeat(100000));
+    });
+  });
 });

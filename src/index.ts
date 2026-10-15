@@ -4,6 +4,7 @@ import { program } from 'commander';
 import logger, { configureLogger } from './logger.js';
 import { getVersion } from './lib/version.js';
 import { getIgnoreFile, getMinifyFile } from './handlers/utils.js';
+import { DEFAULT_PAGE_SIZE, DEFAULT_CLAUDE_CODE_PAGE_SIZE } from './constants.js';
 import path from 'path';
 
 /**
@@ -46,6 +47,14 @@ async function runServer(options: any, _command: any) {
   }
   if (options.gptTokenLimit) {
     process.env.COCO_GPT_TOKEN_LIMIT = options.gptTokenLimit.toString();
+  }
+
+  // Store page size from command line argument (don't override env if already set)
+  if (options.pageSize) {
+    process.env.COCO_PAGE_SIZE = options.pageSize.toString();
+  }
+  if (options.claudeCodePageSize) {
+    process.env.COCO_CLAUDE_CODE_PAGE_SIZE = options.claudeCodePageSize.toString();
   }
 
   // Determine mode based on command line flags
@@ -93,6 +102,16 @@ async function runServer(options: any, _command: any) {
       `🎯 GPT token limit overridden: ${defaultGptLimit.toLocaleString()} -> ${options.gptTokenLimit.toLocaleString()}`
     );
   }
+  if (options.pageSize && options.pageSize !== DEFAULT_PAGE_SIZE) {
+    logger.info(
+      `📄 get_codebase page size overridden: ${DEFAULT_PAGE_SIZE.toLocaleString()} -> ${options.pageSize.toLocaleString()} characters`
+    );
+  }
+  if (options.claudeCodePageSize && options.claudeCodePageSize !== DEFAULT_CLAUDE_CODE_PAGE_SIZE) {
+    logger.info(
+      `📄 Claude Code page size guidance overridden: ${DEFAULT_CLAUDE_CODE_PAGE_SIZE.toLocaleString()} -> ${options.claudeCodePageSize.toLocaleString()} characters`
+    );
+  }
 
   try {
     if (transportMode === 'stdio') {
@@ -130,6 +149,16 @@ program
   .option(
     '-g, --gpt-token-limit <number>',
     'set GPT token limit warning - going over this limit will issue a warning when calling get_codebase_size (default: 128000)',
+    parseInt
+  )
+  .option(
+    '--page-size <number>',
+    'set the get_codebase pagination page size in characters (default: 99000; Claude Desktop caps pages at 100000 characters)',
+    parseInt
+  )
+  .option(
+    '--claude-code-page-size <number>',
+    'set the _pageSize value the model is told to use when running under Claude Code - this value is reported in the get_codebase tool description (default: 30000)',
     parseInt
   )
   .action(runServer);

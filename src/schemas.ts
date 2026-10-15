@@ -69,7 +69,10 @@ export const GetCodebaseArgsSchema = z.object({
     .default('')
     .describe('Relative path from root directory to analyze (defaults to root)'),
   page: z.number().optional().default(1).describe('Page number for pagination (defaults to 1)'),
-  _pageSize: z.number().optional().describe('Page size for pagination (defaults to 99000)'),
+  _pageSize: z
+    .number()
+    .optional()
+    .describe('Page size for pagination. Leave empty to use the server default.'),
 });
 
 export const GetCodebaseSizeArgsSchema = z.object({
