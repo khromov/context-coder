@@ -1,11 +1,55 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'fs/promises';
 import path from 'path';
-import { handleExecuteCommand } from '../../handlers/execute_command.js';
+import { existsSync, readFileSync } from 'fs';
+import {
+  handleExecuteCommand,
+  killAllRunningCommands,
+  getRunningCommandCount,
+} from '../../handlers/execute_command.js';
 import { setupTestDir, cleanupTestDir, createTestContext, createTestFile } from './test-utils.js';
 
-// Shell-syntax tests rely on /bin/sh and POSIX utilities (grep, tr, sleep)
-const describePosix = process.platform === 'win32' ? describe.skip : describe;
+const isWindows = process.platform === 'win32';
+// These tests use /bin/sh syntax (single quotes, `&`, `$!`, `wait`) and POSIX utilities
+// (grep, tr, sleep) that cmd.exe does not have; Windows equivalents are in 'cmd.exe syntax'
+const describePosix = isWindows ? describe.skip : describe;
+const describeWindows = isWindows ? describe : describe.skip;
+
+// A command that runs for ~30s and whose grandchild (sleep / ping) holds stdout open,
+// so it only finishes early if the whole process tree is killed
+const LONG_COMMAND = isWindows ? 'ping -n 30 127.0.0.1' : 'sleep 30';
+
+// Whether a process is still running. A killed process can linger as a zombie until it is
+// reaped, and kill(pid, 0) succeeds on zombies, so on Linux also check the process state.
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  const statPath = `/proc/${pid}/stat`;
+  if (existsSync(statPath)) {
+    const state = readFileSync(statPath, 'utf-8').split(') ')[1]?.[0];
+    return state !== 'Z' && state !== 'X';
+  }
+  return true;
+}
+
+async function waitForFile(filePath: string, timeoutMs = 5000): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const content = (await fs.readFile(filePath, 'utf-8')).trim();
+      if (content) {
+        return content;
+      }
+    } catch {
+      // Not written yet
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error(`Timed out waiting for ${filePath}`);
+}
 
 describe('handleExecuteCommand', () => {
   let testDir: string;
@@ -65,16 +109,96 @@ describe('handleExecuteCommand', () => {
 
   it('should handle command timeout', async () => {
     const context = createTestContext(testDir);
+    const start = Date.now();
     const result = await handleExecuteCommand(
       {
-        command: process.platform === 'win32' ? 'timeout /t 5' : 'sleep 5',
-        timeout: 100, // 100ms timeout
+        command: LONG_COMMAND,
+        timeout: 200,
       },
       context
     );
 
-    expect(result.content[0].text).toContain('=== killed by signal: SIGTERM ===');
-  }, 10000); // Increase test timeout
+    expect(Date.now() - start).toBeLessThan(5000);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('=== timed out after 200ms ===');
+  }, 10000);
+
+  it('should not report a timeout for a command that finishes in time', async () => {
+    const context = createTestContext(testDir);
+    const result = await handleExecuteCommand({ command: 'echo done', timeout: 5000 }, context);
+
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).not.toContain('timed out');
+  });
+
+  it('should remove finished commands from the running registry', async () => {
+    const context = createTestContext(testDir);
+    const pending = handleExecuteCommand({ command: 'echo done' }, context);
+    expect(getRunningCommandCount()).toBe(1);
+
+    await pending;
+    expect(getRunningCommandCount()).toBe(0);
+  });
+
+  it('should kill running commands with killAllRunningCommands', async () => {
+    const context = createTestContext(testDir);
+    const start = Date.now();
+    const pending = handleExecuteCommand({ command: LONG_COMMAND, timeout: 60000 }, context);
+    // Let the command start its grandchild before killing everything
+    await new Promise((r) => setTimeout(r, 300));
+    expect(getRunningCommandCount()).toBe(1);
+
+    killAllRunningCommands();
+    const result = await pending;
+
+    expect(Date.now() - start).toBeLessThan(5000);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).not.toContain('timed out');
+    expect(getRunningCommandCount()).toBe(0);
+  }, 10000);
+
+  describeWindows('cmd.exe syntax', () => {
+    it('should support double-quoted arguments', async () => {
+      await createTestFile(testDir, 'notes.txt', 'hello brave new world\r\nhello world\r\n');
+      const context = createTestContext(testDir);
+      const result = await handleExecuteCommand(
+        { command: 'findstr /C:"brave new" notes.txt' },
+        context
+      );
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('hello brave new world');
+      // The line without the quoted phrase must not match
+      expect(result.content[0].text).not.toMatch(/^hello world\r?$/m);
+    });
+
+    it('should support && chaining and %VAR% expansion', async () => {
+      const context = createTestContext(testDir);
+      const result = await handleExecuteCommand(
+        {
+          command: 'echo first&& echo value: %COCO_TEST_VAR%',
+          env: { COCO_TEST_VAR: 'from-env' },
+        },
+        context
+      );
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toMatch(/first\r?\nvalue: from-env/);
+    });
+
+    it('should report the timeout for a command with output redirected', async () => {
+      const context = createTestContext(testDir);
+      const start = Date.now();
+      const result = await handleExecuteCommand(
+        { command: 'ping -n 30 127.0.0.1 >NUL', timeout: 200 },
+        context
+      );
+
+      expect(Date.now() - start).toBeLessThan(5000);
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('=== timed out after 200ms ===');
+    }, 10000);
+  });
 
   describePosix('shell syntax', () => {
     it('should strip double quotes from arguments', async () => {
@@ -174,6 +298,21 @@ describe('handleExecuteCommand', () => {
       expect(Date.now() - start).toBeLessThan(3000);
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('=== killed by signal: SIGTERM ===');
+      expect(result.content[0].text).toContain('=== timed out after 200ms ===');
+    }, 10000);
+
+    it('should report a timeout even when the shell itself exits with 0', async () => {
+      const context = createTestContext(testDir);
+      // The shell exits right away, but the background job keeps stdout open until it is killed
+      const result = await handleExecuteCommand(
+        { command: 'sleep 30 & echo started', timeout: 300 },
+        context
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('started');
+      expect(result.content[0].text).toContain('=== exit code: 0 ===');
+      expect(result.content[0].text).toContain('=== timed out after 300ms ===');
     }, 10000);
 
     it('should kill grandchild processes started by the shell', async () => {
@@ -190,9 +329,28 @@ describe('handleExecuteCommand', () => {
 
       const sleepPid = Number((await fs.readFile(path.join(testDir, 'sleep.pid'), 'utf-8')).trim());
       expect(sleepPid).toBeGreaterThan(0);
-      // Give the kernel a moment to reap the killed process
+      // Give the kernel a moment to deliver the signal
       await new Promise((r) => setTimeout(r, 100));
-      expect(() => process.kill(sleepPid, 0)).toThrow();
+      expect(isProcessRunning(sleepPid)).toBe(false);
+    }, 10000);
+
+    it('should kill the whole process tree of running commands on shutdown', async () => {
+      const context = createTestContext(testDir);
+      const pidFile = path.join(testDir, 'sleep.pid');
+      const pending = handleExecuteCommand(
+        { command: 'sleep 30 & echo $! > sleep.pid; wait', timeout: 60000 },
+        context
+      );
+      const sleepPid = Number(await waitForFile(pidFile));
+      expect(isProcessRunning(sleepPid)).toBe(true);
+
+      killAllRunningCommands();
+      const result = await pending;
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('=== killed by signal: SIGKILL ===');
+      await new Promise((r) => setTimeout(r, 100));
+      expect(isProcessRunning(sleepPid)).toBe(false);
     }, 10000);
   });
 });

@@ -1,24 +1,58 @@
 import { ExecuteCommandArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import logger from '../logger.js';
 
 const isWindows = process.platform === 'win32';
 
+// Commands that are still running, so they can be killed when the server shuts down.
+// On POSIX they run in their own process group (`detached: true`), which means a Ctrl-C
+// or SIGHUP sent to the server's group no longer reaches them on its own.
+const runningCommands = new Set<ChildProcess>();
+
 // Kill the command together with everything it spawned. The command runs through a
 // shell, so killing only the direct child would leave grandchildren (e.g. `sleep`)
 // alive and holding stdout open, which keeps 'close' from ever firing.
-function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
+// `sync` waits for taskkill on Windows; use it when the process is about to exit.
+function killProcessTree(child: ChildProcess, signal: NodeJS.Signals, sync = false): void {
   if (child.pid === undefined) {
     return;
   }
 
+  const killDirectChild = () => {
+    try {
+      child.kill(signal);
+    } catch {
+      // Ignore - process already exited
+    }
+  };
+
   if (isWindows) {
-    // taskkill /T kills the whole tree; there are no POSIX signals to forward
-    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' }).on(
-      'error',
-      () => child.kill(signal)
-    );
+    // taskkill /T kills the whole tree; there are no POSIX signals to forward.
+    // Fall back to killing the direct child if taskkill is missing or fails.
+    const taskkillArgs = ['/pid', String(child.pid), '/T', '/F'];
+    if (sync) {
+      const result = spawnSync('taskkill', taskkillArgs, { stdio: 'ignore', windowsHide: true });
+      if (result.error || result.status !== 0) {
+        killDirectChild();
+      }
+      return;
+    }
+
+    let fellBack = false;
+    const fallback = () => {
+      if (!fellBack) {
+        fellBack = true;
+        killDirectChild();
+      }
+    };
+    const taskkill = spawn('taskkill', taskkillArgs, { stdio: 'ignore', windowsHide: true });
+    taskkill.on('error', fallback);
+    taskkill.on('exit', (code) => {
+      if (code !== 0) {
+        fallback();
+      }
+    });
     return;
   }
 
@@ -27,12 +61,25 @@ function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
     process.kill(-child.pid, signal);
   } catch {
     // Group already gone or not signalable - fall back to the direct child
-    try {
-      child.kill(signal);
-    } catch {
-      // Ignore - process already exited
-    }
+    killDirectChild();
   }
+}
+
+/**
+ * Kill every command started by execute_command that is still running, including the
+ * processes they started. Call this when the server shuts down so commands are not
+ * left running as orphans. Safe to call more than once.
+ */
+export function killAllRunningCommands(): void {
+  for (const child of runningCommands) {
+    killProcessTree(child, 'SIGKILL', true);
+  }
+  runningCommands.clear();
+}
+
+/** Number of execute_command commands that are currently running. */
+export function getRunningCommandCount(): number {
+  return runningCommands.size;
 }
 
 export async function handleExecuteCommand(
@@ -57,6 +104,7 @@ export async function handleExecuteCommand(
     const errorChunks: Buffer[] = [];
 
     let finished = false;
+    let timedOut = false;
     let killTimeoutId: NodeJS.Timeout | undefined;
 
     // Run the command line through the system shell (/bin/sh on POSIX, cmd.exe on Windows)
@@ -71,9 +119,11 @@ export async function handleExecuteCommand(
       shell: true,
       detached: !isWindows,
     });
+    runningCommands.add(child);
 
     // Set up timeout
     const timeoutId = setTimeout(() => {
+      timedOut = true;
       killProcessTree(child, 'SIGTERM');
       killTimeoutId = setTimeout(() => {
         if (!finished) {
@@ -95,6 +145,7 @@ export async function handleExecuteCommand(
     // Handle process exit
     child.on('close', (code, signal) => {
       finished = true;
+      runningCommands.delete(child);
       clearTimeout(timeoutId);
       clearTimeout(killTimeoutId);
 
@@ -117,12 +168,23 @@ export async function handleExecuteCommand(
         output += `\n=== killed by signal: ${signal} ===`;
       }
 
+      // The shell's own exit code can be 0 even after a timeout (e.g. a background job
+      // kept stdout open after the shell exited), so report the timeout explicitly.
+      if (timedOut) {
+        output += `\n=== timed out after ${parsed.data.timeout}ms ===`;
+      }
+
+      const isError = code !== 0 || timedOut;
       const result = {
         content: [{ type: 'text', text: output.trim() }],
-        isError: code !== 0,
+        isError,
       };
 
-      if (code !== 0) {
+      if (timedOut) {
+        logger.error(
+          `⏱️ execute_command handler timed out after ${parsed.data.timeout}ms: ${parsed.data.command}`
+        );
+      } else if (code !== 0) {
         logger.error(
           `⏱️ execute_command handler finished with error: ${parsed.data.command} (exit code: ${code})`
         );
@@ -137,6 +199,7 @@ export async function handleExecuteCommand(
     // Handle spawn errors
     child.on('error', (error) => {
       finished = true;
+      runningCommands.delete(child);
       clearTimeout(timeoutId);
       clearTimeout(killTimeoutId);
       logger.error(
