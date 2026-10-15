@@ -301,7 +301,7 @@ volumes:
 | `directory_tree`                 | Get directory structure as JSON (only use when specifically asked or for debugging)                       |
 | `move_file`                      | Move or rename files                                                                                      |
 | `search_files`                   | Search by pattern                                                                                         |
-| `execute_command`                | Run shell commands                                                                                        |
+| `execute_command`                | Run shell commands (quoting, pipes, `&&`, redirects and env vars supported)                               |
 
 ## Available Prompts
 

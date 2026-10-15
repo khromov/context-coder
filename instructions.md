@@ -55,7 +55,7 @@ Only use these tools when specifically needed:
 - `list_directory` - Only when users ask "what files are in X directory?"
 - `directory_tree` - Only when users request a visual tree structure
 - `search_files` - When looking for specific patterns across files
-- `execute_command` - For running build/test commands
+- `execute_command` - For running build/test commands. Commands run through a shell, so quoting, pipes and `&&` work; quote shell metacharacters (`& | ( ) ; # $ *`) when you mean them literally. Background jobs must redirect their output (`cmd >/dev/null 2>&1 &`), otherwise the call blocks until the timeout. Note that tools like `grep` exit with code 1 when nothing matches
 
 ## Managing Large Codebases
 

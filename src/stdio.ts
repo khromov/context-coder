@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createServer } from './mcp.js';
 import logger from './logger.js';
 import { getVersion } from './lib/version.js';
+import { killAllRunningCommands } from './handlers/execute_command.js';
 
 // All logging MUST go to stderr in stdio mode
 // stdout is reserved exclusively for MCP protocol messages
@@ -18,6 +19,7 @@ export async function startStdioServer(): Promise<void> {
     // Handle graceful shutdown
     const handleShutdown = async () => {
       logger.info('Shutting down stdio server...');
+      killAllRunningCommands();
       await cleanup();
       await transport.close();
       process.exit(0);
@@ -25,6 +27,9 @@ export async function startStdioServer(): Promise<void> {
 
     process.on('SIGINT', handleShutdown);
     process.on('SIGTERM', handleShutdown);
+    process.on('SIGHUP', handleShutdown);
+    // Last resort for any other exit path, so running commands are never orphaned
+    process.on('exit', killAllRunningCommands);
 
     // Connect the server to the transport
     await server.connect(transport);

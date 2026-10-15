@@ -5,6 +5,7 @@ import { createServer } from './mcp.js';
 import { randomUUID } from 'node:crypto';
 import logger from './logger.js';
 import { getVersion } from './lib/version.js';
+import { killAllRunningCommands } from './handlers/execute_command.js';
 
 const buildType = process.env.COCO_BUILD_TYPE || 'none';
 const mode = process.env.CONTEXT_CODER_MODE || 'mini';
@@ -182,6 +183,9 @@ export async function startHttpServer(port?: number): Promise<void> {
 const gracefulShutdown = async () => {
   logger.info('Shutting down 🥥 Coco server...');
 
+  // Commands run in their own process group, so they must be killed explicitly
+  killAllRunningCommands();
+
   // Close all active transports to properly clean up resources
   for (const sessionId in transports) {
     try {
@@ -197,6 +201,9 @@ const gracefulShutdown = async () => {
   process.exit(0);
 };
 
-// Handle both SIGINT (Ctrl+C) and SIGTERM (Docker stop)
+// Handle SIGINT (Ctrl+C), SIGTERM (Docker stop) and SIGHUP (terminal closed)
 process.on('SIGINT', gracefulShutdown);
 process.on('SIGTERM', gracefulShutdown);
+process.on('SIGHUP', gracefulShutdown);
+// Last resort for any other exit path, so running commands are never orphaned
+process.on('exit', killAllRunningCommands);
