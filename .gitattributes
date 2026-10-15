@@ -1,0 +1,2 @@
+# Keep LF line endings on every platform (Prettier enforces endOfLine: lf)
+* text=auto eol=lf
