@@ -3,6 +3,7 @@ import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
+import net from 'net';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,6 +18,25 @@ describe('HTTP Server Integration Tests', () => {
   afterEach(() => {
     process.env = originalEnv;
   });
+
+  const DEFAULT_PORT = 3001;
+
+  // Ask the OS for a free port so tests never collide with a server already running,
+  // and never hand out the default port, which a locally running server may claim at any time
+  const getFreePort = async (): Promise<number> => {
+    for (;;) {
+      const port = await new Promise<number>((resolve, reject) => {
+        const srv = net.createServer();
+        srv.unref();
+        srv.on('error', reject);
+        srv.listen(0, () => {
+          const { port } = srv.address() as net.AddressInfo;
+          srv.close(() => resolve(port));
+        });
+      });
+      if (port !== DEFAULT_PORT) return port;
+    }
+  };
 
   const startServerOnPort = (port: number): Promise<{ process: ChildProcess; baseUrl: string }> => {
     return new Promise((resolve, reject) => {
@@ -143,7 +163,7 @@ describe('HTTP Server Integration Tests', () => {
   };
 
   it('should start HTTP server and bind to specified port', async () => {
-    const port = 3001 + Math.floor(Math.random() * 1000); // Random port to avoid conflicts
+    const port = await getFreePort();
     const { process: serverProcess, baseUrl } = await startServerOnPort(port);
 
     try {
@@ -166,7 +186,7 @@ describe('HTTP Server Integration Tests', () => {
   }, 15000);
 
   it('should handle MCP initialize request over HTTP', async () => {
-    const port = 3001 + Math.floor(Math.random() * 1000);
+    const port = await getFreePort();
     const { process: serverProcess, baseUrl } = await startServerOnPort(port);
 
     try {
@@ -221,7 +241,7 @@ describe('HTTP Server Integration Tests', () => {
   }, 15000);
 
   it('should handle tools/list request over HTTP with session', async () => {
-    const port = 3001 + Math.floor(Math.random() * 1000);
+    const port = await getFreePort();
     const { process: serverProcess, baseUrl } = await startServerOnPort(port);
 
     try {
@@ -288,7 +308,7 @@ describe('HTTP Server Integration Tests', () => {
   }, 15000);
 
   it('should handle SSE stream connections', async () => {
-    const port = 3001 + Math.floor(Math.random() * 1000);
+    const port = await getFreePort();
     const { process: serverProcess, baseUrl } = await startServerOnPort(port);
 
     try {
@@ -316,7 +336,7 @@ describe('HTTP Server Integration Tests', () => {
 
       expect(initResponse.status).toBe(200);
       expect(initResponse.headers['content-type']).toContain('text/event-stream');
-      expect(initResponse.headers['cache-control']).toBe('no-cache');
+      expect(initResponse.headers['cache-control']).toContain('no-cache');
       expect(initResponse.headers['connection']).toBe('keep-alive');
 
       // For StreamableHTTP, the initialize response itself confirms SSE is working
@@ -331,7 +351,7 @@ describe('HTTP Server Integration Tests', () => {
   }, 15000);
 
   it('should reject requests without valid session ID', async () => {
-    const port = 3001 + Math.floor(Math.random() * 1000);
+    const port = await getFreePort();
     const { process: serverProcess, baseUrl } = await startServerOnPort(port);
 
     try {

@@ -1,5 +1,4 @@
-import { z } from 'zod';
-import { ToolSchema } from '@modelcontextprotocol/sdk/types.js';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 // Tree entry interface for directory tree
 export interface TreeEntry {
@@ -9,7 +8,7 @@ export interface TreeEntry {
 }
 
 // MCP tool types
-export type ToolInput = z.infer<typeof ToolSchema.shape.inputSchema>;
+export type ToolInput = Tool['inputSchema'];
 
 // Handler types
 export interface HandlerContext {
