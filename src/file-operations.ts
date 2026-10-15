@@ -23,7 +23,8 @@ export async function searchFiles(
 
         try {
           // Check if path matches any exclude pattern
-          const relativePath = path.relative(rootPath, fullPath);
+          // Glob patterns use forward slashes, so normalize Windows separators first
+          const relativePath = path.relative(rootPath, fullPath).split(path.sep).join('/');
           const shouldExclude = excludePatterns.some((pattern) => {
             const globPattern = pattern.includes('*') ? pattern : `**/${pattern}/**`;
             return minimatch(relativePath, globPattern, { dot: true });

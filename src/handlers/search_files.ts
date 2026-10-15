@@ -23,9 +23,10 @@ export async function handleSearchFiles(
   const results = await searchFiles(absolutePath, parsed.data.pattern, parsed.data.excludePatterns);
 
   // Convert absolute paths back to relative paths without leading ./
+  // Always use forward slashes so results look the same on Windows
   const relativePaths = results.map((absPath) => {
     const relPath = path.relative(context.absoluteRootDir, absPath);
-    return relPath;
+    return relPath.split(path.sep).join('/');
   });
 
   const result = {
