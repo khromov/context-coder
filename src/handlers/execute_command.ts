@@ -1,7 +1,39 @@
 import { ExecuteCommandArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import logger from '../logger.js';
+
+const isWindows = process.platform === 'win32';
+
+// Kill the command together with everything it spawned. The command runs through a
+// shell, so killing only the direct child would leave grandchildren (e.g. `sleep`)
+// alive and holding stdout open, which keeps 'close' from ever firing.
+function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (child.pid === undefined) {
+    return;
+  }
+
+  if (isWindows) {
+    // taskkill /T kills the whole tree; there are no POSIX signals to forward
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' }).on(
+      'error',
+      () => child.kill(signal)
+    );
+    return;
+  }
+
+  try {
+    // Negative pid targets the process group created by `detached: true`
+    process.kill(-child.pid, signal);
+  } catch {
+    // Group already gone or not signalable - fall back to the direct child
+    try {
+      child.kill(signal);
+    } catch {
+      // Ignore - process already exited
+    }
+  }
+}
 
 export async function handleExecuteCommand(
   args: any,
@@ -14,11 +46,6 @@ export async function handleExecuteCommand(
 
   logger.info(`⚡ execute_command handler started: ${parsed.data.command}`);
 
-  // Parse the command string into command and args
-  const commandParts = parsed.data.command.trim().split(/\s+/);
-  const command = commandParts[0];
-  const commandArgs = commandParts.slice(1);
-
   // Merge environment variables
   const env = {
     ...process.env,
@@ -29,19 +56,28 @@ export async function handleExecuteCommand(
     const chunks: Buffer[] = [];
     const errorChunks: Buffer[] = [];
 
-    // Spawn the child process
-    const child = spawn(command, commandArgs, {
+    let finished = false;
+    let killTimeoutId: NodeJS.Timeout | undefined;
+
+    // Run the command line through the system shell (/bin/sh on POSIX, cmd.exe on Windows)
+    // so quoting, pipes, &&, redirects, globs and $VAR expansion behave as callers expect.
+    // This tool exists to run arbitrary caller-supplied commands, so the shell adds no new
+    // capability - path restrictions do not apply here either way.
+    // On POSIX, `detached: true` puts the shell in its own process group so the timeout can
+    // kill it together with any processes it started.
+    const child = spawn(parsed.data.command, {
       cwd: context.absoluteRootDir,
       env,
-      shell: false, // Use false for security - prevents shell injection
+      shell: true,
+      detached: !isWindows,
     });
 
     // Set up timeout
     const timeoutId = setTimeout(() => {
-      child.kill('SIGTERM');
-      setTimeout(() => {
-        if (!child.killed) {
-          child.kill('SIGKILL');
+      killProcessTree(child, 'SIGTERM');
+      killTimeoutId = setTimeout(() => {
+        if (!finished) {
+          killProcessTree(child, 'SIGKILL');
         }
       }, 5000); // Give 5 seconds for graceful shutdown
     }, parsed.data.timeout);
@@ -58,7 +94,9 @@ export async function handleExecuteCommand(
 
     // Handle process exit
     child.on('close', (code, signal) => {
+      finished = true;
       clearTimeout(timeoutId);
+      clearTimeout(killTimeoutId);
 
       const stdout = Buffer.concat(chunks).toString('utf-8');
       const stderr = Buffer.concat(errorChunks).toString('utf-8');
@@ -98,7 +136,9 @@ export async function handleExecuteCommand(
 
     // Handle spawn errors
     child.on('error', (error) => {
+      finished = true;
       clearTimeout(timeoutId);
+      clearTimeout(killTimeoutId);
       logger.error(
         `⏱️ execute_command handler finished with spawn error: ${parsed.data.command} (${error.message})`
       );

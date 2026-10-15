@@ -164,8 +164,11 @@ const additionalTools = [
     name: 'execute_command',
     description:
       'Execute a shell command with controlled environment. ' +
-      "Pass the full command as a string (e.g., 'npx -y ai-digest', 'ls -la'). " +
-      'Commands are executed with a 60-second timeout to prevent hanging. ' +
+      "Pass the full command line as a string (e.g., 'npx -y ai-digest', 'ls -la'). " +
+      'The command runs through a shell (/bin/sh on POSIX, cmd.exe on Windows), so quoting, ' +
+      'pipes, &&, redirects, globs and environment variable expansion work as usual. ' +
+      'Note that a non-zero exit code is not always a failure: grep, for example, exits with 1 when nothing matches. ' +
+      'Commands are executed with a 60-second timeout (configurable) to prevent hanging; on timeout the command and any processes it started are killed. ' +
       'Returns stdout, stderr, and exit code. ' +
       'Available CLI tools include: fzf (fuzzy finder), gh (GitHub CLI), jq (JSON processor), ' +
       'dig/nslookup (DNS tools), iptables/ipset (network tools), claude-code (Claude CLI).',
