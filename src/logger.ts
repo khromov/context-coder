@@ -1,28 +1,30 @@
-import winston from 'winston';
+import { inspect } from 'node:util';
 
-// Create a custom format that includes timestamp and level
-const logFormat = winston.format.combine(
-  winston.format.timestamp({
-    format: 'HH:mm:ss MM/DD/YY', // Short date format as requested
-  }),
-  winston.format.printf(({ timestamp, level, message, ...meta }) => {
-    let logMessage = `[${timestamp}] ${level.toUpperCase()}: ${message}`;
+type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
-    // Add any additional metadata if present
-    if (Object.keys(meta).length > 0) {
-      logMessage += ` ${JSON.stringify(meta)}`;
-    }
+// HTTP mode logs to stdout; configureLogger() switches to stderr for stdio mode
+let output: NodeJS.WriteStream = process.stdout;
 
-    return logMessage;
-  })
-);
+const pad = (value: number) => String(value).padStart(2, '0');
 
-// Create logger with default HTTP mode configuration
-const logger = winston.createLogger({
-  level: 'debug', // Set to debug to capture all levels
-  format: logFormat,
-  transports: [new winston.transports.Console({})],
-});
+// Short date format: HH:mm:ss MM/DD/YY
+function formatTimestamp(date: Date): string {
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return `${time} ${pad(date.getMonth() + 1)}/${pad(date.getDate())}/${pad(date.getFullYear() % 100)}`;
+}
+
+function log(level: LogLevel, message: string, args: unknown[]): void {
+  // Additional arguments (usually a caught error) are appended; errors are printed with their stack
+  const parts = [message, ...args.map((arg) => (typeof arg === 'string' ? arg : inspect(arg)))];
+  output.write(`[${formatTimestamp(new Date())}] ${level.toUpperCase()}: ${parts.join(' ')}\n`);
+}
+
+const logger = {
+  error: (message: string, ...args: unknown[]) => log('error', message, args),
+  warn: (message: string, ...args: unknown[]) => log('warn', message, args),
+  info: (message: string, ...args: unknown[]) => log('info', message, args),
+  debug: (message: string, ...args: unknown[]) => log('debug', message, args),
+};
 
 /**
  * Configure the logger for the specified transport mode
@@ -30,18 +32,8 @@ const logger = winston.createLogger({
 export function configureLogger(transportMode: string): void {
   const isStdioMode = transportMode === 'stdio';
 
-  // Clear existing transports
-  logger.clear();
-
-  // Add appropriate transport based on mode
-  const consoleTransport = isStdioMode
-    ? new winston.transports.Console({
-        // In stdio mode, ALL logs must go to stderr to avoid polluting stdout
-        stderrLevels: ['error', 'warn', 'info', 'debug', 'verbose', 'silly'],
-      })
-    : new winston.transports.Console({});
-
-  logger.add(consoleTransport);
+  // In stdio mode, ALL logs must go to stderr to avoid polluting stdout
+  output = isStdioMode ? process.stderr : process.stdout;
 
   // Log the mode configuration
   if (isStdioMode) {

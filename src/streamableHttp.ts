@@ -1,6 +1,6 @@
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { InMemoryEventStore } from '@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js';
-import express, { Request, Response } from 'express';
+import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from './mcp.js';
 import { randomUUID } from 'node:crypto';
 import logger from './logger.js';
@@ -14,14 +14,17 @@ logger.info(
   `Starting 🥥 Coco MCP Server v${version} (Streamable HTTP) using build type ${buildType} (${mode} mode)`
 );
 
-const app = express();
-
 const transports: Map<string, StreamableHTTPServerTransport> = new Map<
   string,
   StreamableHTTPServerTransport
 >();
 
-app.post('/mcp', async (req: Request, res: Response) => {
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(body));
+}
+
+async function handleMcpPost(req: IncomingMessage, res: ServerResponse): Promise<void> {
   logger.debug('Received MCP POST request');
   try {
     // Check for existing session ID
@@ -65,13 +68,13 @@ app.post('/mcp', async (req: Request, res: Response) => {
       return; // Already handled
     } else {
       // Invalid request - no session ID or not initialization request
-      res.status(400).json({
+      sendJson(res, 400, {
         jsonrpc: '2.0',
         error: {
           code: -32000,
           message: 'Bad Request: No valid session ID provided',
         },
-        id: req?.body?.id,
+        id: null,
       });
       return;
     }
@@ -82,31 +85,31 @@ app.post('/mcp', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Error handling MCP request:', error);
     if (!res.headersSent) {
-      res.status(500).json({
+      sendJson(res, 500, {
         jsonrpc: '2.0',
         error: {
           code: -32603,
           message: 'Internal server error',
         },
-        id: req?.body?.id,
+        id: null,
       });
       return;
     }
   }
-});
+}
 
 // Handle GET requests for SSE streams (using built-in support from StreamableHTTP)
-app.get('/mcp', async (req: Request, res: Response) => {
+async function handleMcpGet(req: IncomingMessage, res: ServerResponse): Promise<void> {
   logger.debug('Received MCP GET request');
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
   if (!sessionId || !transports.has(sessionId)) {
-    res.status(400).json({
+    sendJson(res, 400, {
       jsonrpc: '2.0',
       error: {
         code: -32000,
         message: 'Bad Request: No valid session ID provided',
       },
-      id: req?.body?.id,
+      id: null,
     });
     return;
   }
@@ -121,19 +124,19 @@ app.get('/mcp', async (req: Request, res: Response) => {
 
   const transport = transports.get(sessionId);
   await transport!.handleRequest(req, res);
-});
+}
 
 // Handle DELETE requests for session termination (according to MCP spec)
-app.delete('/mcp', async (req: Request, res: Response) => {
+async function handleMcpDelete(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
   if (!sessionId || !transports.has(sessionId)) {
-    res.status(400).json({
+    sendJson(res, 400, {
       jsonrpc: '2.0',
       error: {
         code: -32000,
         message: 'Bad Request: No valid session ID provided',
       },
-      id: req?.body?.id,
+      id: null,
     });
     return;
   }
@@ -146,22 +149,22 @@ app.delete('/mcp', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Error handling session termination:', error);
     if (!res.headersSent) {
-      res.status(500).json({
+      sendJson(res, 500, {
         jsonrpc: '2.0',
         error: {
           code: -32603,
           message: 'Error handling session termination',
         },
-        id: req?.body?.id,
+        id: null,
       });
       return;
     }
   }
-});
+}
 
 // Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  res.json({
+function handleHealth(res: ServerResponse): void {
+  sendJson(res, 200, {
     status: 'healthy',
     version: getVersion(),
     mode: mode,
@@ -169,12 +172,34 @@ app.get('/health', (req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     activeTransports: transports.size,
   });
+}
+
+const httpServer = createHttpServer(async (req, res) => {
+  try {
+    const { pathname } = new URL(req.url ?? '/', 'http://localhost');
+    if (pathname === '/mcp' && req.method === 'POST') {
+      await handleMcpPost(req, res);
+    } else if (pathname === '/mcp' && req.method === 'GET') {
+      await handleMcpGet(req, res);
+    } else if (pathname === '/mcp' && req.method === 'DELETE') {
+      await handleMcpDelete(req, res);
+    } else if (pathname === '/health' && (req.method === 'GET' || req.method === 'HEAD')) {
+      handleHealth(res);
+    } else {
+      sendJson(res, 404, { error: `Cannot ${req.method} ${pathname}` });
+    }
+  } catch (error) {
+    logger.error(`Error handling ${req.method} ${req.url}:`, error);
+    if (!res.headersSent) {
+      sendJson(res, 500, { error: 'Internal server error' });
+    }
+  }
 });
 
 // Export function to start the server
 export async function startHttpServer(port?: number): Promise<void> {
   const PORT = port || process.env.COCO_PORT || 3001;
-  app.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
     logger.info(`🥥 Coco MCP Server listening on port ${PORT} (${mode} mode)`);
   });
 }
