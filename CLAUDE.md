@@ -2,107 +2,79 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-You have access to both Claude Code's built-in file tools and the Coco MCP for enhanced codebase analysis. Follow this workflow:
+When the Context Coder MCP is connected (see `.mcp.json`; its server entries are currently disabled), use it alongside Claude Code's built-in tools:
 
-1. ALWAYS start every new chat by calling get_codebase_size and get_codebase MCP tools to ingest and understand the full project context
-2. Use Coco's codebase analysis as your primary reference - avoid reading files since you already have the complete codebase, only read file if you are missing something or if the user specifically requests it.
-3. Remember: Coco gives you full codebase context, Claude Code gives you precise editing control - use both strategically
+1. Start every new chat by calling the `get_codebase_size` and `get_codebase` MCP tools to ingest the full project context.
+2. Treat that digest as your primary reference. Only read a file if it is missing from the digest or the user asks you to.
+3. Context Coder gives you full codebase context, and Claude Code gives you precise editing control. Use both.
 
 ## Project Overview
 
-Coco MCP (Context Coder) is a secure file system access server implementing the Model Context Protocol. It provides AI models with controlled file operations within designated directories.
+Context Coder (aka Coco, published on npm as `context-coder`) is an MCP server that lets an LLM load an entire codebase into its context (via `ai-digest`) and, in full mode, operate on files within a single root directory.
 
-## Essential Commands
-
-**Development:**
+## Commands
 
 ```bash
-npm run dev          # Start development server with auto-reload (port 3002, ./mount sandbox)
-npm run build        # Compile TypeScript to dist/
-npm start            # Run production server (port 3001)
+npm run build          # rm dist, tsc, copy instructions.md into dist/
+npm run dev            # nodemon: rebuild + run on src changes, port 3002, COCO_DEV=true (./mount sandbox)
+npm run dev:stdio      # same, stdio transport
+npm start              # node dist/index.js (HTTP, port 3001)
+npm run lint           # eslint src/**/*.ts
+npm run format         # prettier on src/**/*.ts and root *.json/*.md
+npm run format:check
+npm run mcp            # launch the MCP Inspector
 ```
 
 **Testing:**
 
 ```bash
-npm test             # Run all tests
-npm run test:watch   # Run tests in watch mode - never run this, it will get stuck
-npm run test:coverage # Generate coverage report
+npm test               # builds first, then runs all Jest tests
+# Single test file (no build step; run `npm run build` first for cli/stdio/streamableHttp tests):
+node --experimental-vm-modules node_modules/jest/bin/jest.js src/__tests__/handlers/read_file.test.ts
+# Filter by test name:
+node --experimental-vm-modules node_modules/jest/bin/jest.js -t "pattern"
 ```
 
-**Code Quality:**
+Never run `npm run test:watch`; it never exits.
 
-```bash
-npm run format       # Format code with Prettier - run this when you finished with all your changes
-npm run format:check # Check code formatting
-npm run watch        # TypeScript compiler in watch mode
-```
+The `cli`, `stdio` and `streamableHttp` tests spawn `dist/index.js`, which is why `npm test` builds first. CI (`.github/workflows/`) runs lint, `format:check` and tests on Node 22 on both **ubuntu and windows**, so path handling must work with `\` separators (normalize to `/` in output).
+
+The husky pre-commit hook runs `npm run format` and then **`git add -A`**, so any untracked file in the working tree ends up in the commit.
 
 ## Architecture
 
-The server follows a layered architecture:
+**Startup and config flow:** `src/index.ts` (commander CLI) parses flags and writes them into env vars (`CONTEXT_CODER_MODE`, `CONTEXT_CODER_EDIT_MODE`, `COCO_PAGE_SIZE`, `COCO_CLAUDE_CODE_PAGE_SIZE`, `COCO_CLAUDE_TOKEN_LIMIT`, `COCO_GPT_TOKEN_LIMIT`). Only then does it dynamically import `stdio.ts` or `streamableHttp.ts`. This ordering matters: `tools.ts` reads `CONTEXT_CODER_EDIT_MODE` and the Claude Code page size **at module load time** to build the tool list and descriptions, so these modules must not be imported statically from `index.ts`. Modules read config from `process.env`, not from passed-in options.
 
-1. **Transport Layer** (`src/streamableHttp.ts`): Handles HTTP/SSE communication with session management
-2. **MCP Layer** (`src/mcp.ts`): Implements the Model Context Protocol server with 11 file operation tools
-3. **Tool Layer** (`src/tools.ts` + `src/handlers/`): Modular handlers for each MCP tool with Zod validation
-4. **File Operations** (`src/file-operations.ts`): Secure file system utilities with path validation
-5. **Codebase Digest** (`src/codebase-digest.ts`): Handles AI-digest integration for token counting and file analysis
+**Layers:**
 
-**Key Design Decisions:**
+- `stdio.ts` / `streamableHttp.ts`: transports. HTTP (Express, `/mcp` and `/health`) creates a new MCP `Server` per session, keyed by the `mcp-session-id` header. In stdio mode all logging must go to stderr; `configureLogger()` in `logger.ts` handles this, so use `logger` rather than `console.log`.
+- `mcp.ts`: `createServer()` resolves the root dir (`./mount` when `COCO_DEV=true`, otherwise cwd) and dispatches `CallTool` to `tool.handler(args, { absoluteRootDir })`. It also loads `instructions.md` from next to the compiled file (hence the copy into `dist/` during the build) and fills its `{EDIT_FILE_TOOL_LIST}` / `{EDITING_STRATEGY}` / `{EFFICIENT_EDITING_PRACTICE}` placeholders based on edit mode. MCP prompts live in `lib/prompts.ts`.
+- `tools.ts`: the tool registry. `miniTools` (`get_codebase_size`, `get_codebase`, `get_codebase_top_largest_files`) are always exposed. Full mode adds `read_file`, `write_file`, `remove_file`, `create_directory`, `list_directory`, `directory_tree`, `move_file`, `search_files`, `execute_command`, plus `edit_file` only in edit mode. **Mode defaults to full**; mini must be requested with `--mini`.
+- `handlers/<tool>.ts`: one file per tool. A handler parses `args` with its Zod schema from `schemas.ts` (the same schema is converted to JSON Schema for the tool definition), validates paths, and returns `{ content: [{ type: 'text', text }] }`. Thrown errors are converted into `isError` responses by `mcp.ts`.
+- `codebase-digest.ts`: wraps `ai-digest`. Pagination is by character count: files are packed into pages up to the page size, a single file larger than a page is replaced with an omission notice, and each page ends with an instruction telling the model whether to call again. The page size comes from `_pageSize` in the call args, then `COCO_PAGE_SIZE`, then 99000 (Claude Desktop caps results at 100k chars).
 
-- All file paths must be relative (starting with "./")
-- Parent directory access ("../") is blocked for security
-- In development mode, operations are sandboxed to the `./mount` directory
-- The server validates all paths to prevent directory traversal attacks
-- Large codebases are handled with token counting and size warnings
+**Adding a tool:** add a Zod schema in `schemas.ts`, a handler in `src/handlers/`, register it in `miniTools` or `additionalTools` in `tools.ts`, and update `instructions.md` and the README tool table if models or users need to know about it.
 
-## Development Notes
+**Path security:** every user-supplied path must go through `validateRelativePath()` and then `resolveRelativePath(path, context.absoluteRootDir)`, both in `src/handlers/utils.ts`. Paths may be given with or without a `./` prefix; any `..` segment is rejected. File writes use `writeFileSecure()` in `file-operations.ts` (exclusive create, otherwise a temp file plus atomic rename).
 
-When working on this codebase:
+**Ignore and minify files:** `get_codebase*` and the `ls` subcommand honor `.cocoignore` and `.cocominify` in the target root, falling back to the legacy `.aidigestignore` and `.aidigestminify`. Minified files appear in the digest as a placeholder that tells the model to use `read_file`. Built-in ignores are in `DEFAULT_IGNORES` in `constants.ts`.
 
-1. **Path Handling**: Always use the `validatePath()` function from file-operations.ts when dealing with user-provided paths
-2. **Error Messages**: Include the actual error details in responses to help with debugging
-3. **Testing**: Add tests in `src/__tests__/` following the existing Jest/TypeScript setup with ESM support
-4. **Handler Pattern**: New MCP tools should follow the modular handler pattern - create handler in `src/handlers/` and register in `src/tools.ts`
-5. **Docker**: The Dockerfile uses a multi-stage build. Test Docker changes with `docker-compose up --build`
-6. **Token Limits**: Be aware of Claude (150k) and ChatGPT (128k) token limits when processing codebases
-7. **Mode Selection**: Server runs in 'mini' mode by default. Use `--full` flag or set `CONTEXT_CODER_MODE=full` for all tools
-8. **Development Sandbox**: In dev mode (`COCO_DEV=true`), file operations are sandboxed to `./mount` directory
-9. **Git Hooks**: The project uses the `pre-commit` package to automatically format code before commits (configured in package.json)
+**execute_command:** runs commands through a shell (`/bin/sh` or `cmd.exe`). On POSIX each command gets its own process group (`detached`), so timeouts and server shutdown kill the whole tree via `killAllRunningCommands()`, which both transports call on SIGINT, SIGTERM, SIGHUP and exit.
+
+## Tests
+
+Tests live in `src/__tests__/` (Jest with ts-jest ESM preset; imports use `.js` suffixes, which `moduleNameMapper` strips). Handler tests use `handlers/test-utils.ts`: `setupTestDir()` creates a temp dir under `src/__tests__/handlers/test-handlers-temp/` (removed by `src/jest.teardown.js`), and `createTestContext(dir)` builds the `HandlerContext`. Tests are excluded from `tsc` and have their own ESLint block.
+
+## Docker
+
+The multi-stage `Dockerfile` takes a `BUILD_TYPE` build arg (`regular`/`full`, `mini`, `edit`) and bakes it into `COCO_BUILD_TYPE`. `entrypoint.sh` maps that to `--mini`, `--full` or `--full --edit-file-mode`, and `COCO_MCP_TRANSPORT=stdio` switches it to `--stdio`. CI publishes the `full`, `mini` and `edit` images to GHCR on every push to main. Note that `build-all.sh` and the README pass `--build-arg COCO_BUILD_TYPE=...`, which the Dockerfile does not declare, so those builds fall back to `regular`.
 
 ## Environment Variables
 
-All environment variables use the `COCO_` prefix for consistency:
-
-- `COCO_PORT`: Server port (default: 3001) - can also be set via `--port` CLI flag
-- `COCO_DEV`: Set to "true" for development mode (uses ./mount sandbox)
-- `COCO_MCP_TRANSPORT`: Transport protocol - "http" or "stdio" (default: "http")
-- `COCO_BUILD_TYPE`: Docker build variant - "regular", "mini", or "edit"
-- `CONTEXT_CODER_MODE`: Runtime mode - "mini" or "full" (set by CLI flags)
-- `CONTEXT_CODER_EDIT_MODE`: Enable edit_file tool when set to "true"
-
-## Available Tools
-
-The server exposes 11 MCP tools for file operations (mini mode has 3, full mode adds 8 more):
-
-**Mini Mode Tools (always available):**
-
-- `get_codebase_size` - Check codebase size and token counts before processing
-- `get_codebase` - Generate paginated summary of entire codebase
-- `get_codebase_top_largest_files` - Get top X largest files for .cocoignore/.cocominify optimization
-
-**Full Mode Additional Tools:**
-
-- File operations: `read_file`, `write_file`, `move_file`
-- Directory operations: `list_directory`, `directory_tree`, `create_directory`
-- Search: `search_files`
-- Command execution: `execute_command`
-- Line-based editing: `edit_file` (when edit mode is enabled)
-
-**Important Workflow:**
-
-1. Always run `get_codebase_size` FIRST to check if the codebase is within token limits
-2. Then run `get_codebase` to get the actual code content
-3. Use other tools only when specifically needed
-
-See `src/mcp.ts` for the complete tool implementations.
+- `COCO_DEV=true`: sandbox to `./mount` (set by the `dev*` scripts)
+- `COCO_PORT` / `--port`: HTTP port (default 3001)
+- `COCO_MCP_TRANSPORT`: `http` (default) or `stdio`; takes precedence over `--stdio`
+- `COCO_PAGE_SIZE` / `--page-size`: `get_codebase` page size in characters (default 99000)
+- `COCO_CLAUDE_CODE_PAGE_SIZE` / `--claude-code-page-size`: `_pageSize` value suggested in the tool description for Claude Code (default 30000)
+- `COCO_CLAUDE_TOKEN_LIMIT` / `-c`, `COCO_GPT_TOKEN_LIMIT` / `-g`: warning thresholds in `get_codebase_size` (defaults 150000 / 128000)
+- `CONTEXT_CODER_MODE` (`mini`/`full`) and `CONTEXT_CODER_EDIT_MODE` (`true`): normally set by CLI flags, not by hand
