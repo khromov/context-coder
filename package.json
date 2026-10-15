@@ -13,7 +13,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "shx rm -rf dist && tsc && shx cp instructions.md dist/ && shx chmod +x dist/*.js",
+    "build": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\" && tsc && node -e \"fs.copyFileSync('instructions.md', 'dist/instructions.md'); for (const f of fs.readdirSync('dist')) if (f.endsWith('.js')) fs.chmodSync('dist/' + f, 0o755)\"",
     "watch": "tsc --watch",
     "start": "node dist/index.js",
     "start:stdio": "COCO_MCP_TRANSPORT=stdio node dist/index.js --stdio",
@@ -40,28 +40,28 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "ai-digest": "^1.5.1",
-    "commander": "^14.0.0",
+    "commander": "^14.0.3",
     "ignore": "^7.0.12",
     "minimatch": "^10.2.6",
-    "zod": "^3.25.76",
-    "zod-to-json-schema": "^3.25.2"
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.17.2",
+    "@eslint/js": "^9.39.5",
+    "@jest/globals": "^30.5.2",
+    "@types/node": "^22.20.5",
     "@typescript-eslint/eslint-plugin": "^8.71.2",
     "@typescript-eslint/parser": "^8.71.2",
-    "eslint": "^9.33.0",
+    "eslint": "^9.39.5",
     "eslint-plugin-jest": "^29.17.0",
     "husky": "^9.1.7",
     "jest": "^30.5.2",
     "nodemon": "^3.1.14",
     "prettier": "^3.9.10",
-    "shx": "^0.4.0",
     "ts-jest": "^29.4.15",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.3"
   },
   "allowScripts": {
     "@parcel/watcher@2.6.0": true,

@@ -1,5 +1,5 @@
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { z } from 'zod';
 import {
   GetCodebaseSizeArgsSchema,
   GetCodebaseArgsSchema,
@@ -33,6 +33,11 @@ import { handleMoveFile } from './handlers/move_file.js';
 import { handleSearchFiles } from './handlers/search_files.js';
 import { handleExecuteCommand } from './handlers/execute_command.js';
 
+// Describe the arguments a client may send, so fields with defaults stay optional
+function toInputSchema(schema: z.ZodType): ToolInput {
+  return z.toJSONSchema(schema, { io: 'input', target: 'draft-7' }) as ToolInput;
+}
+
 // Extend Tool type to include handler
 export interface ToolWithHandler extends Tool {
   handler: ToolHandler;
@@ -48,7 +53,7 @@ const miniTools: ToolWithHandler[] = [
       'and shows the largest files. ' +
       'IMPORTANT: You should ALWAYS run this tool at the start of EVERY NEW CONVERSATION before any other operations. ' +
       'After running this tool, you should then call get_codebase to retrieve the actual code.',
-    inputSchema: zodToJsonSchema(GetCodebaseSizeArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(GetCodebaseSizeArgsSchema),
     handler: handleGetCodebaseSize,
   },
   {
@@ -57,7 +62,7 @@ const miniTools: ToolWithHandler[] = [
       'Generate a a merged markdown file of the entire codebase.' +
       'Results are paginated.' +
       `If more content exists, a message will prompt to call again with the next page number. Leave the _pageSize variable empty UNLESS you are running under Claude Code, in that case set it to ${getClaudeCodePageSize()} to work around the Claude Code limits.`,
-    inputSchema: zodToJsonSchema(GetCodebaseArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(GetCodebaseArgsSchema),
     handler: handleGetCodebase,
   },
   {
@@ -66,7 +71,7 @@ const miniTools: ToolWithHandler[] = [
       'Returns the top X largest files in the codebase. ' +
       'Use this tool when users want to see more large files beyond the initial 10 shown in get_codebase_size. ' +
       'Helpful for identifying which files to add to .cocoignore for large codebases.',
-    inputSchema: zodToJsonSchema(GetCodebaseTopLargestFilesArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(GetCodebaseTopLargestFilesArgsSchema),
     handler: handleGetCodebaseTopLargestFiles,
   },
 ];
@@ -79,7 +84,7 @@ const additionalTools = [
       'Read the complete contents of a file from the file system. ' +
       "Use relative paths with or without './' prefix (e.g., 'file.txt', './file.txt', 'folder/file.txt'). " +
       'IMPORTANT: You should NEVER call this unless the user specifically asks to re-read a file OR you get stuck and need it to debug something.',
-    inputSchema: zodToJsonSchema(ReadFileArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(ReadFileArgsSchema),
     handler: handleReadFile,
   },
   process.env.CONTEXT_CODER_EDIT_MODE === 'true'
@@ -90,7 +95,7 @@ const additionalTools = [
           "with new content. Use relative paths with or without './' prefix (e.g., 'file.txt', './folder/file.txt'). " +
           'By default, throws an error if text appears multiple times. Set replace_all to true to replace all occurrences. ' +
           'Use this tool only if you have a small, focused set of edits that need to be made. If you are making larger changes or are unsure, use the write_file tool instead.',
-        inputSchema: zodToJsonSchema(EditFileArgsSchema) as ToolInput,
+        inputSchema: toInputSchema(EditFileArgsSchema),
         handler: handleEditFile,
       }
     : undefined,
@@ -100,7 +105,7 @@ const additionalTools = [
       'Create a new file or completely overwrite an existing file with new content. ' +
       "Use relative paths with or without './' prefix (e.g., 'newfile.txt', './folder/file.txt'). " +
       'You must write out the file in full each time you call write_file.',
-    inputSchema: zodToJsonSchema(WriteFileArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(WriteFileArgsSchema),
     handler: handleWriteFile,
   },
   {
@@ -109,7 +114,7 @@ const additionalTools = [
       'Delete a file from the file system. ' +
       "Use relative paths with or without './' prefix (e.g., 'file.txt', './folder/file.txt'). " +
       'This operation is irreversible. Only works with files, not directories.',
-    inputSchema: zodToJsonSchema(RemoveFileArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(RemoveFileArgsSchema),
     handler: handleRemoveFile,
   },
   {
@@ -118,7 +123,7 @@ const additionalTools = [
       'Create a new directory or ensure a directory exists. ' +
       "Use relative paths with or without './' prefix (e.g., 'newfolder', './parent/child'). " +
       'Can create multiple nested directories in one operation.',
-    inputSchema: zodToJsonSchema(CreateDirectoryArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(CreateDirectoryArgsSchema),
     handler: handleCreateDirectory,
   },
   {
@@ -128,7 +133,7 @@ const additionalTools = [
       "Use relative paths with or without './' prefix (use './' or '.' for root directory). " +
       'Results show [FILE] and [DIR] prefixes to distinguish between files and directories. ' +
       'IMPORTANT: You should NEVER call this unless the user specifically asks to find all the files in a directory or use this tool OR you get stuck and need it to debug something.',
-    inputSchema: zodToJsonSchema(ListDirectoryArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(ListDirectoryArgsSchema),
     handler: handleListDirectory,
   },
   {
@@ -138,7 +143,7 @@ const additionalTools = [
       'Path is optional - if not provided, shows the root directory. ' +
       'Returns a structured view of the entire directory hierarchy. ' +
       'IMPORTANT: You should NEVER call this UNLESS the user specifically asks for it OR you get stuck and need it to debug something.',
-    inputSchema: zodToJsonSchema(DirectoryTreeArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(DirectoryTreeArgsSchema),
     handler: handleDirectoryTree,
   },
   {
@@ -147,7 +152,7 @@ const additionalTools = [
       'Move or rename files and directories. ' +
       "Use relative paths with or without './' prefix for both source and destination. " +
       'Can move files between directories and rename them in a single operation.',
-    inputSchema: zodToJsonSchema(MoveFileArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(MoveFileArgsSchema),
     handler: handleMoveFile,
   },
   {
@@ -158,7 +163,7 @@ const additionalTools = [
       'The search is case-insensitive and matches partial file names. ' +
       'Do NOT call this tool unless the user specifically asks to search for files or you get stuck and need it to debug something.' +
       'Remember that you generally already have access to all the codebase, so there is little reason to search for files.',
-    inputSchema: zodToJsonSchema(SearchFilesArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(SearchFilesArgsSchema),
     handler: handleSearchFiles,
   },
   {
@@ -175,7 +180,7 @@ const additionalTools = [
       'Returns stdout, stderr, and exit code. ' +
       'Available CLI tools include: fzf (fuzzy finder), gh (GitHub CLI), jq (JSON processor), ' +
       'dig/nslookup (DNS tools), iptables/ipset (network tools), claude-code (Claude CLI).',
-    inputSchema: zodToJsonSchema(ExecuteCommandArgsSchema) as ToolInput,
+    inputSchema: toInputSchema(ExecuteCommandArgsSchema),
     handler: handleExecuteCommand,
   },
 ].filter((tool): tool is NonNullable<typeof tool> => tool !== undefined);

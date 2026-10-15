@@ -1,7 +1,7 @@
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { InMemoryEventStore } from '@modelcontextprotocol/sdk/examples/shared/inMemoryEventStore.js';
 import { createServer as createHttpServer, IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from './mcp.js';
+import { InMemoryEventStore } from './lib/in-memory-event-store.js';
 import { randomUUID } from 'node:crypto';
 import logger from './logger.js';
 import { getVersion } from './lib/version.js';
@@ -212,10 +212,10 @@ const gracefulShutdown = async () => {
   killAllRunningCommands();
 
   // Close all active transports to properly clean up resources
-  for (const sessionId in transports) {
+  for (const [sessionId, transport] of transports) {
     try {
       logger.debug(`Closing transport for session ${sessionId}`);
-      await transports.get(sessionId)!.close();
+      await transport.close();
       transports.delete(sessionId);
     } catch (error) {
       logger.error(`Error closing transport for session ${sessionId}:`, error);

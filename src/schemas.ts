@@ -59,7 +59,10 @@ export const ExecuteCommandArgsSchema = z.object({
     .optional()
     .default(60000)
     .describe('Command timeout in milliseconds (default: 60 seconds)'),
-  env: z.record(z.string()).optional().describe('Environment variables to set for the command'),
+  env: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe('Environment variables to set for the command'),
 });
 
 export const GetCodebaseArgsSchema = z.object({

@@ -381,4 +381,49 @@ describe('HTTP Server Integration Tests', () => {
       });
     }
   }, 15000);
+
+  // On Windows, kill() terminates the process without running its SIGTERM handler
+  const describePosix = process.platform === 'win32' ? describe.skip : describe;
+
+  describePosix('shutdown', () => {
+    it('should close open sessions on shutdown', async () => {
+      const port = await getFreePort();
+      const { process: serverProcess, baseUrl } = await startServerOnPort(port);
+
+      let output = '';
+      serverProcess.stdout?.on('data', (data) => {
+        output += data.toString();
+      });
+
+      try {
+        const initResponse = await sendHttpRequest(`${baseUrl}/mcp`, {
+          method: 'POST',
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'initialize',
+            params: {
+              protocolVersion: '2024-11-05',
+              capabilities: {},
+              clientInfo: { name: 'test-client', version: '1.0.0' },
+            },
+          }),
+        });
+        const sessionId = initResponse.headers['mcp-session-id'];
+        expect(sessionId).toBeTruthy();
+
+        const exitCode = await new Promise<number | null>((resolve) => {
+          serverProcess.on('exit', (code) => resolve(code));
+          serverProcess.kill('SIGTERM');
+        });
+
+        expect(exitCode).toBe(0);
+        expect(output).toContain(`Closing transport for session ${sessionId}`);
+      } finally {
+        if (serverProcess.exitCode === null) {
+          serverProcess.kill('SIGKILL');
+        }
+      }
+    }, 15000);
+  });
 });
