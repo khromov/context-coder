@@ -24,6 +24,7 @@ import {
   isEditMode,
   ServerMode,
 } from './constants.js';
+import { resolveShell } from './lib/shell.js';
 
 // Import handlers
 import { handleGetCodebaseSize } from './handlers/get_codebase_size.js';
@@ -185,7 +186,7 @@ const additionalTools: ToolWithHandler[] = [
     description:
       'Execute a shell command with controlled environment. ' +
       "Pass the full command line as a string (e.g., 'npx -y ai-digest', 'ls -la'). " +
-      'The command runs through a shell (/bin/sh on POSIX, cmd.exe on Windows), so quoting, ' +
+      `The command runs through ${resolveShell().label}, so quoting, ` +
       'pipes, &&, redirects, globs and environment variable expansion work as usual. ' +
       'Quote shell metacharacters (& | ( ) ; # $ *) when you mean them literally, e.g. a URL containing &. ' +
       'Note that a non-zero exit code is not always a failure: grep, for example, exits with 1 when nothing matches. ' +

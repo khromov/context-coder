@@ -1,6 +1,7 @@
 import { ExecuteCommandArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
 import { CappedOutput } from '../lib/capped-output.js';
+import { resolveShell, getShellInvocation } from '../lib/shell.js';
 import { COMMAND_OUTPUT_HEAD_BYTES, COMMAND_OUTPUT_TAIL_BYTES } from '../constants.js';
 import { spawn, spawnSync, ChildProcess } from 'child_process';
 import logger from '../logger.js';
@@ -110,16 +111,18 @@ export async function handleExecuteCommand(
     let timedOut = false;
     let killTimeoutId: NodeJS.Timeout | undefined;
 
-    // Run the command line through the system shell (/bin/sh on POSIX, cmd.exe on Windows)
-    // so quoting, pipes, &&, redirects, globs and $VAR expansion behave as callers expect.
-    // This tool exists to run arbitrary caller-supplied commands, so the shell adds no new
-    // capability - path restrictions do not apply here either way.
+    // Run the command line through a shell so quoting, pipes, &&, redirects, globs and $VAR
+    // expansion behave as callers expect: /bin/sh, zsh emulating sh on macOS, cmd.exe on
+    // Windows, or COCO_SHELL (see resolveShell). This tool exists to run arbitrary
+    // caller-supplied commands, so the shell adds no new capability - path restrictions do
+    // not apply here either way.
     // On POSIX, `detached: true` puts the shell in its own process group so the timeout can
     // kill it together with any processes it started.
-    const child = spawn(parsed.data.command, {
+    const invocation = getShellInvocation(resolveShell(), parsed.data.command);
+    const child = spawn(invocation.file, invocation.args, {
       cwd: context.absoluteRootDir,
       env,
-      shell: true,
+      shell: invocation.shell,
       detached: !isWindows,
       // No stdin: a command that reads input gets end-of-file instead of waiting for the timeout
       stdio: ['ignore', 'pipe', 'pipe'],

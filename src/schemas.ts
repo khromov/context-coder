@@ -49,7 +49,7 @@ export const ExecuteCommandArgsSchema = z.object({
   command: z
     .string()
     .describe(
-      'The full command line to execute, run through a shell (/bin/sh on POSIX, cmd.exe on Windows). ' +
+      'The full command line to execute, run through the shell named in the tool description. ' +
         'Quoting, pipes, &&, redirects, globs and $VAR expansion are supported ' +
         '(e.g., "npx -y ai-digest", "ls -la", \'grep -n "import" src/index.ts | head -5\')'
     ),

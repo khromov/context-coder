@@ -298,6 +298,7 @@ volumes:
 - `COCO_PORT`: Override default port 3001 (HTTP mode only)
 - `COCO_HOST`: Address to listen on in HTTP mode (equivalent to `--host` flag, default: `127.0.0.1`; the Docker image sets `0.0.0.0` inside the container)
 - `COCO_ALLOWED_HOSTS`: Comma-separated hostnames to accept in the `Host` and `Origin` headers besides `localhost`, `127.0.0.1` and `[::1]` (equivalent to `--allowed-hosts` flag)
+- `COCO_SHELL`: Shell that `execute_command` runs commands with. By default this is `/bin/sh` (`cmd.exe` on Windows), except on macOS: there `/bin/sh` is bash 3.2, which mis-parses quotes inside `$(...)`, so Coco uses `/bin/zsh` emulating sh instead
 - `COCO_PAGE_SIZE`: Override the `get_codebase` pagination page size in characters (equivalent to `--page-size` flag, default: 99000)
 - `COCO_CLAUDE_CODE_PAGE_SIZE`: Override the `_pageSize` value the model is told to use under Claude Code (equivalent to `--claude-code-page-size` flag, default: 30000)
 - `CONTEXT_CODER_EDIT_MODE`: Set to "true" to enable `edit_file` tool (equivalent to `--edit-file-mode` flag)
