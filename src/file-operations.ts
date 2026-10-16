@@ -6,6 +6,8 @@ import ignore from 'ignore';
 import { TreeEntry } from './types.js';
 import { DEFAULT_IGNORES, SEARCH_SKIPPED_DIRECTORIES } from './constants.js';
 
+const isWindows = process.platform === 'win32';
+
 // Matcher for the default ignore patterns, built once and shared
 const defaultIgnore = ignore().add(DEFAULT_IGNORES);
 
@@ -100,6 +102,44 @@ export async function buildTree(
   return result;
 }
 
+export interface RenameWithRetryOptions {
+  /** Retry on lock errors. Defaults to true on Windows only. */
+  retry?: boolean;
+  /** Give up after this many milliseconds. */
+  timeoutMs?: number;
+  /** The rename to perform, replaceable in tests. */
+  rename?: (from: string, to: string) => Promise<void>;
+}
+
+const RETRYABLE_RENAME_ERRORS = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
+/**
+ * Rename a file, replacing the destination. On Windows, the rename fails with EPERM, EACCES or
+ * EBUSY while something else has the destination open or is replacing it: a concurrent write,
+ * an editor, antivirus or the search indexer. Those locks are brief, so the rename is retried
+ * with a short backoff for up to about a second, as graceful-fs does.
+ */
+export async function renameWithRetry(
+  from: string,
+  to: string,
+  { retry = isWindows, timeoutMs = 1000, rename = fs.rename }: RenameWithRetryOptions = {}
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (let delay = 10; ; delay = Math.min(delay * 2, 100)) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const retryable = retry && code !== undefined && RETRYABLE_RENAME_ERRORS.has(code);
+      if (!retryable || Date.now() + delay > deadline) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 // Write a file so readers never see it half-written
 export async function writeFileSecure(filePath: string, content: string): Promise<void> {
   try {
@@ -115,11 +155,14 @@ export async function writeFileSecure(filePath: string, content: string): Promis
   // The file exists: write a temp file next to it, then rename it into place atomically
   const tempPath = `${filePath}.${randomBytes(16).toString('hex')}.tmp`;
   try {
-    const { mode } = await fs.stat(filePath);
     await fs.writeFile(tempPath, content, { encoding: 'utf-8', flag: 'wx' });
-    // A new file gets default permissions, so copy the original's (e.g. the executable bit)
-    await fs.chmod(tempPath, mode & 0o7777);
-    await fs.rename(tempPath, filePath);
+    if (!isWindows) {
+      // A new file gets default permissions, so copy the original's (e.g. the executable
+      // bit). Windows has no permission bits to copy.
+      const { mode } = await fs.stat(filePath);
+      await fs.chmod(tempPath, mode & 0o7777);
+    }
+    await renameWithRetry(tempPath, filePath);
   } catch (error) {
     await fs.rm(tempPath, { force: true }).catch(() => {
       // Ignore cleanup errors
