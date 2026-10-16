@@ -1,17 +1,11 @@
 import { GetCodebaseTopLargestFilesArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
-import {
-  validateRelativePath,
-  resolveRelativePath,
-  getIgnoreFile,
-  getMinifyFile,
-  normalizeDisplayPath,
-} from './utils.js';
+import { resolveSafePath, getIgnoreFile, getMinifyFile, normalizeDisplayPath } from './utils.js';
 import aiDigest from 'ai-digest';
 import logger from '../logger.js';
 
 export async function handleGetCodebaseTopLargestFiles(
-  args: any,
+  args: unknown,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   logger.debug('📈 get_codebase_top_largest_files handler started');
@@ -21,8 +15,7 @@ export async function handleGetCodebaseTopLargestFiles(
     throw new Error(`Invalid arguments for get_codebase_top_largest_files: ${parsed.error}`);
   }
 
-  validateRelativePath(parsed.data.path);
-  const absolutePath = resolveRelativePath(parsed.data.path, context.absoluteRootDir);
+  const absolutePath = await resolveSafePath(parsed.data.path, context.absoluteRootDir);
 
   try {
     logger.debug(`Getting file statistics for path: ${absolutePath}, count: ${parsed.data.count}`);

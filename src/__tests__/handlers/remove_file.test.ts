@@ -6,9 +6,13 @@ import {
   createTestContext,
   fileExists,
   createTestFile,
+  readTestFile,
 } from './test-utils.js';
 import fs from 'fs/promises';
 import path from 'path';
+
+// Creating symlinks on Windows needs extra privileges
+const itPosix = process.platform === 'win32' ? it.skip : it;
 
 describe('handleRemoveFile', () => {
   let testDir: string;
@@ -53,6 +57,17 @@ describe('handleRemoveFile', () => {
 
       expect(result.content[0].text).toBe('Successfully removed file subdir/nested.txt');
       expect(await fileExists(testDir, 'subdir/nested.txt')).toBe(false);
+    });
+
+    itPosix('should remove a symlink itself, not the file it points to', async () => {
+      const context = createTestContext(testDir);
+      await createTestFile(testDir, 'target.txt', 'keep me');
+      await fs.symlink(path.join(testDir, 'target.txt'), path.join(testDir, 'link.txt'));
+
+      await handleRemoveFile({ path: 'link.txt' }, context);
+
+      expect(await fileExists(testDir, 'link.txt')).toBe(false);
+      expect(await readTestFile(testDir, 'target.txt')).toBe('keep me');
     });
   });
 

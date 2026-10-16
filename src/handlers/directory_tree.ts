@@ -1,27 +1,22 @@
 import { DirectoryTreeArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
-import { validateRelativePath, resolveRelativePath } from './utils.js';
+import { resolveSafePath } from './utils.js';
 import { buildTree } from '../file-operations.js';
 import logger from '../logger.js';
 
 export async function handleDirectoryTree(
-  args: any,
+  args: unknown,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   logger.debug('🌳 directory_tree handler started');
 
-  const parsed = DirectoryTreeArgsSchema.safeParse(args || {});
+  const parsed = DirectoryTreeArgsSchema.safeParse(args ?? {});
   if (!parsed.success) {
     throw new Error(`Invalid arguments for directory_tree: ${parsed.error}`);
   }
-  validateRelativePath(parsed.data.path);
-  const absolutePath = resolveRelativePath(parsed.data.path, context.absoluteRootDir);
+  const absolutePath = await resolveSafePath(parsed.data.path, context.absoluteRootDir);
 
-  const treeData = await buildTree(
-    absolutePath,
-    [context.absoluteRootDir],
-    context.absoluteRootDir
-  );
+  const treeData = await buildTree(absolutePath);
 
   const result = {
     content: [

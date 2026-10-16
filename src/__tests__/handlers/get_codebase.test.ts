@@ -28,19 +28,36 @@ describe('handleGetCodebase', () => {
   });
 
   it('should handle pagination for multiple files', async () => {
-    // Create several files to test pagination
+    // 5 files of 25KB don't fit on one 99k-character page
     for (let i = 0; i < 5; i++) {
-      const content = `// File ${i}\n` + 'x'.repeat(25000); // 25KB each
+      const content = `// File ${i}\n` + 'x'.repeat(25000);
       await createTestFile(testDir, `file${i}.js`, content);
     }
 
     const context = createTestContext(testDir);
     const result = await handleGetCodebase({ path: './', page: 1 }, context);
 
-    // Should have pagination message if content exceeds page size
-    if (result.content[0].text.includes('This is page 1')) {
-      expect(result.content[0].text).toContain('You MUST call this tool again with page: 2');
-    }
+    expect(result.content[0].text).toContain(
+      'This is page 1. You MUST call this tool again with page: 2'
+    );
+
+    const page2 = await handleGetCodebase({ path: './', page: 2 }, context);
+    expect(page2.content[0].text).toContain('This is the last page (page 2)');
+  });
+
+  it('should reject a page number that is not a positive whole number', async () => {
+    await createTestFile(testDir, 'index.js', 'console.log("Hello World");');
+    const context = createTestContext(testDir);
+
+    await expect(handleGetCodebase({ path: './', page: 1.5 }, context)).rejects.toThrow(
+      'Invalid arguments for get_codebase'
+    );
+    await expect(handleGetCodebase({ path: './', page: 0 }, context)).rejects.toThrow(
+      'Invalid arguments for get_codebase'
+    );
+    await expect(handleGetCodebase({ path: './', _pageSize: -100 }, context)).rejects.toThrow(
+      'Invalid arguments for get_codebase'
+    );
   });
 
   it('should omit very large files', async () => {

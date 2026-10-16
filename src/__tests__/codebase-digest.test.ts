@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
-import { generateCodebaseDigest, getCodebaseSize } from '../codebase-digest.js';
+import { generateCodebaseDigest } from '../codebase-digest.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -57,19 +57,13 @@ describe('generateCodebaseDigest', () => {
 
     expect(result.currentPage).toBe(1);
 
-    // Should contain some content
-    expect(result.content.length).toBeGreaterThan(0);
-
     // Should contain at least some files
     const fileMatches = result.content.match(/# [^\n]+\.(ts|md)/g) || [];
     expect(fileMatches.length).toBeGreaterThan(0);
 
-    // If there are more pages, should have pagination message
-    if (result.hasMorePages) {
-      expect(result.content).toContain(
-        'This is page 1. You MUST call this tool again with page: 2'
-      );
-    }
+    // About 145k characters of files don't fit on one 99k page
+    expect(result.hasMorePages).toBe(true);
+    expect(result.content).toContain('This is page 1. You MUST call this tool again with page: 2');
   });
 
   it('should return second page when requested', async () => {
@@ -79,10 +73,8 @@ describe('generateCodebaseDigest', () => {
     });
 
     expect(result.currentPage).toBe(2);
-
-    // Page 2 might be empty or have content depending on file ordering
-    // Just verify it doesn't error
-    expect(result).toBeDefined();
+    expect(result.hasMorePages).toBe(false);
+    expect(result.content).toContain('This is the last page (page 2)');
   });
 
   it('should show last page message when on final page with custom page size', async () => {
@@ -185,7 +177,19 @@ describe('generateCodebaseDigest', () => {
     }
   });
 
-  it('should omit very large files', async () => {
+  it('should reject a page or page size that is not a positive whole number', async () => {
+    await expect(generateCodebaseDigest({ inputDir: TEST_DIR, page: 1.5 })).rejects.toThrow(
+      'page must be a positive whole number'
+    );
+    await expect(generateCodebaseDigest({ inputDir: TEST_DIR, page: 0 })).rejects.toThrow(
+      'page must be a positive whole number'
+    );
+    await expect(generateCodebaseDigest({ inputDir: TEST_DIR, pageSize: -1 })).rejects.toThrow(
+      'pageSize must be a positive whole number'
+    );
+  });
+
+  it('should omit very large files and say how to read them', async () => {
     // Create a specific test for large file
     const LARGE_FILE_DIR = path.join(__dirname, 'test-large-file-temp');
     await fs.mkdir(LARGE_FILE_DIR, { recursive: true });
@@ -203,6 +207,7 @@ describe('generateCodebaseDigest', () => {
       // Should contain the omission message
       expect(result.content).toContain('huge.ts');
       expect(result.content).toContain('File omitted due to large size');
+      expect(result.content).toContain('Use the read_file tool to read it');
       // Should not contain the actual huge content
       expect(result.content.length).toBeLessThan(hugeContent.length);
     } finally {
@@ -236,14 +241,11 @@ describe('generateCodebaseDigest', () => {
       pageSize: 50000, // Smaller page size
     });
 
-    // Should respect the page size setting
-    expect(result).toBeDefined();
     expect(result.currentPage).toBe(1);
+    expect(result.hasMorePages).toBe(true);
 
-    // Content should be limited by page size
-    if (result.content.length > 0) {
-      expect(result.content.length).toBeLessThanOrEqual(60000); // Allow some overflow for pagination message
-    }
+    // Content should be limited by page size, plus the pagination message
+    expect(result.content.length).toBeLessThanOrEqual(50000 + 200);
   });
 
   it('should handle page beyond available content', async () => {
@@ -302,8 +304,8 @@ describe('generateCodebaseDigest', () => {
       expect(result.content).toContain('large2.ts');
       expect(result.content).toContain('File omitted due to large size');
 
-      // The total content should be small (just two omission messages)
-      expect(result.content.length).toBeLessThan(300);
+      // The total content should be small (just two omission messages and the footer)
+      expect(result.content.length).toBeLessThan(500);
 
       // Should not need pagination since omission messages are small
       expect(result.hasMorePages).toBe(false);
@@ -360,74 +362,6 @@ test-data/
       await fs.rm(COCOIGNORE_DIR, { recursive: true, force: true });
     }
   });
-});
-
-describe('getCodebaseSize', () => {
-  // Simple test with minimal directory to avoid hanging
-  it('should return token counts for a simple directory', async () => {
-    const SIMPLE_DIR = path.join(__dirname, 'test-simple-size-temp');
-    await fs.mkdir(SIMPLE_DIR, { recursive: true });
-
-    // Create just one small file
-    await fs.writeFile(path.join(SIMPLE_DIR, 'test.js'), 'console.log("hello world");');
-
-    try {
-      const result = await getCodebaseSize({
-        inputDir: SIMPLE_DIR,
-      });
-
-      expect(result.content).toBeDefined();
-      expect(result.totalClaudeTokens).toBeGreaterThan(0);
-      expect(result.totalGptTokens).toBeGreaterThan(0);
-      expect(result.totalFiles).toBe(1);
-      expect(result.content).toContain('## Token Summary');
-      expect(result.content).toContain('## Next Step');
-    } finally {
-      await fs.rm(SIMPLE_DIR, { recursive: true, force: true });
-    }
-  }, 10000); // 10 second timeout
-
-  it('should handle empty directory without hanging', async () => {
-    const EMPTY_DIR = path.join(__dirname, 'test-empty-size-temp');
-    await fs.mkdir(EMPTY_DIR, { recursive: true });
-
-    try {
-      const result = await getCodebaseSize({
-        inputDir: EMPTY_DIR,
-      });
-
-      expect(result.totalFiles).toBe(0);
-      expect(result.hasWarning).toBe(false);
-      expect(result.content).toContain('**Total files**: 0');
-    } finally {
-      await fs.rm(EMPTY_DIR, { recursive: true, force: true });
-    }
-  }, 10000); // 10 second timeout
-
-  it('should format output with markdown correctly', async () => {
-    const MARKDOWN_DIR = path.join(__dirname, 'test-markdown-temp');
-    await fs.mkdir(MARKDOWN_DIR, { recursive: true });
-
-    await fs.writeFile(path.join(MARKDOWN_DIR, 'readme.md'), '# Test\n\nHello world');
-
-    try {
-      const result = await getCodebaseSize({
-        inputDir: MARKDOWN_DIR,
-      });
-
-      const output = result.content;
-
-      // Check markdown formatting
-      expect(output).toMatch(/##\s+Token Summary/);
-      expect(output).toMatch(/##\s+Next Step/);
-
-      // Check bold formatting
-      expect(output).toContain('**Claude tokens**:');
-      expect(output).toContain('**ChatGPT tokens**:');
-    } finally {
-      await fs.rm(MARKDOWN_DIR, { recursive: true, force: true });
-    }
-  }, 10000); // 10 second timeout
 
   it('should use .cocominify when it exists and show custom minify message', async () => {
     const COCOMINIFY_DIR = path.join(__dirname, 'test-cocominify-temp');

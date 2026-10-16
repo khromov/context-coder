@@ -1,17 +1,12 @@
 import { GetCodebaseSizeArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
-import {
-  validateRelativePath,
-  resolveRelativePath,
-  getIgnoreFile,
-  getMinifyFile,
-  normalizeDisplayPath,
-} from './utils.js';
+import { resolveSafePath, getIgnoreFile, getMinifyFile, normalizeDisplayPath } from './utils.js';
+import { getClaudeTokenLimit, getGptTokenLimit } from '../constants.js';
 import aiDigest from 'ai-digest';
 import logger from '../logger.js';
 
 export async function handleGetCodebaseSize(
-  args: any,
+  args: unknown,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   logger.debug('📊 get_codebase_size handler started');
@@ -21,8 +16,7 @@ export async function handleGetCodebaseSize(
     throw new Error(`Invalid arguments for get_codebase_size: ${parsed.error}`);
   }
 
-  validateRelativePath(parsed.data.path);
-  const absolutePath = resolveRelativePath(parsed.data.path, context.absoluteRootDir);
+  const absolutePath = await resolveSafePath(parsed.data.path, context.absoluteRootDir);
 
   try {
     logger.debug(`Getting file statistics for path: ${absolutePath}`);
@@ -53,13 +47,9 @@ export async function handleGetCodebaseSize(
 
     let output = '';
 
-    // Get token limits from environment variables or use defaults
-    const parsedClaudeLimit = parseInt(process.env.COCO_CLAUDE_TOKEN_LIMIT || '150000', 10);
-    const claudeTokenLimit = isNaN(parsedClaudeLimit) ? 150000 : parsedClaudeLimit;
-
-    const parsedGptLimit = parseInt(process.env.COCO_GPT_TOKEN_LIMIT || '128000', 10);
-    const gptTokenLimit = isNaN(parsedGptLimit) ? 128000 : parsedGptLimit;
-    // Log the token limits being used for debugging
+    // Token limits from --claude-token-limit / --gpt-token-limit, or the defaults
+    const claudeTokenLimit = getClaudeTokenLimit();
+    const gptTokenLimit = getGptTokenLimit();
     logger.debug(`Using token limits - Claude: ${claudeTokenLimit}, GPT: ${gptTokenLimit}`);
 
     const hitClaudeLimit = stats.totalClaudeTokens > claudeTokenLimit;

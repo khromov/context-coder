@@ -1,5 +1,7 @@
 import { ExecuteCommandArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
+import { CappedOutput } from '../lib/capped-output.js';
+import { COMMAND_OUTPUT_HEAD_BYTES, COMMAND_OUTPUT_TAIL_BYTES } from '../constants.js';
 import { spawn, spawnSync, ChildProcess } from 'child_process';
 import logger from '../logger.js';
 
@@ -83,7 +85,7 @@ export function getRunningCommandCount(): number {
 }
 
 export async function handleExecuteCommand(
-  args: any,
+  args: unknown,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   const parsed = ExecuteCommandArgsSchema.safeParse(args);
@@ -100,8 +102,9 @@ export async function handleExecuteCommand(
   };
 
   return new Promise((resolve) => {
-    const chunks: Buffer[] = [];
-    const errorChunks: Buffer[] = [];
+    // Keep the start and end of each stream; the middle of a huge output is dropped
+    const stdoutOutput = new CappedOutput(COMMAND_OUTPUT_HEAD_BYTES, COMMAND_OUTPUT_TAIL_BYTES);
+    const stderrOutput = new CappedOutput(COMMAND_OUTPUT_HEAD_BYTES, COMMAND_OUTPUT_TAIL_BYTES);
 
     let finished = false;
     let timedOut = false;
@@ -118,6 +121,10 @@ export async function handleExecuteCommand(
       env,
       shell: true,
       detached: !isWindows,
+      // No stdin: a command that reads input gets end-of-file instead of waiting for the timeout
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // Don't open a console window for the command on Windows
+      windowsHide: true,
     });
     runningCommands.add(child);
 
@@ -132,14 +139,12 @@ export async function handleExecuteCommand(
       }, 5000); // Give 5 seconds for graceful shutdown
     }, parsed.data.timeout);
 
-    // Collect stdout
-    child.stdout.on('data', (data) => {
-      chunks.push(data);
+    child.stdout.on('data', (data: Buffer) => {
+      stdoutOutput.push(data);
     });
 
-    // Collect stderr
-    child.stderr.on('data', (data) => {
-      errorChunks.push(data);
+    child.stderr.on('data', (data: Buffer) => {
+      stderrOutput.push(data);
     });
 
     // Handle process exit
@@ -149,8 +154,8 @@ export async function handleExecuteCommand(
       clearTimeout(timeoutId);
       clearTimeout(killTimeoutId);
 
-      const stdout = Buffer.concat(chunks).toString('utf-8');
-      const stderr = Buffer.concat(errorChunks).toString('utf-8');
+      const stdout = stdoutOutput.toString();
+      const stderr = stderrOutput.toString();
 
       let output = '';
 

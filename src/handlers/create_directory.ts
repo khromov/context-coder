@@ -1,11 +1,11 @@
 import { CreateDirectoryArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
-import { validateRelativePath, resolveRelativePath, formatDisplayPath } from './utils.js';
+import { resolveSafePath, formatDisplayPath } from './utils.js';
 import fs from 'fs/promises';
 import logger from '../logger.js';
 
 export async function handleCreateDirectory(
-  args: any,
+  args: unknown,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   logger.debug('📁 create_directory handler started');
@@ -14,8 +14,7 @@ export async function handleCreateDirectory(
   if (!parsed.success) {
     throw new Error(`Invalid arguments for create_directory: ${parsed.error}`);
   }
-  validateRelativePath(parsed.data.path);
-  const absolutePath = resolveRelativePath(parsed.data.path, context.absoluteRootDir);
+  const absolutePath = await resolveSafePath(parsed.data.path, context.absoluteRootDir);
 
   // Check if directory already exists
   let directoryExisted = false;

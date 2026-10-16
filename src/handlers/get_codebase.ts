@@ -1,17 +1,12 @@
 import { GetCodebaseArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
-import {
-  validateRelativePath,
-  resolveRelativePath,
-  getIgnoreFile,
-  getMinifyFile,
-} from './utils.js';
+import { resolveSafePath, getIgnoreFile, getMinifyFile } from './utils.js';
 import { generateCodebaseDigest } from '../codebase-digest.js';
 import { getConfiguredPageSize } from '../constants.js';
 import logger from '../logger.js';
 
 export async function handleGetCodebase(
-  args: any,
+  args: unknown,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   const parsed = GetCodebaseArgsSchema.safeParse(args);
@@ -23,8 +18,7 @@ export async function handleGetCodebase(
     `📦 get_codebase handler started: page ${parsed.data.page}, path ${parsed.data.path}`
   );
 
-  validateRelativePath(parsed.data.path);
-  const absolutePath = resolveRelativePath(parsed.data.path, context.absoluteRootDir);
+  const absolutePath = await resolveSafePath(parsed.data.path, context.absoluteRootDir);
 
   try {
     // Check for .cocoignore file and log which one will be used

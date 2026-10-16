@@ -21,4 +21,5 @@ export interface HandlerResponse {
   [key: string]: unknown; // Allow additional properties
 }
 
-export type ToolHandler = (args: any, context: HandlerContext) => Promise<HandlerResponse>;
+// Handlers validate their arguments with their Zod schema, so they accept anything
+export type ToolHandler = (args: unknown, context: HandlerContext) => Promise<HandlerResponse>;

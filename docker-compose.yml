@@ -3,10 +3,14 @@ services:
     # build: .
     image: ghcr.io/khromov/context-coder:full
     ports:
-      - "3001:3001"
+      # Only reachable from this computer
+      - "127.0.0.1:3001:3001"
     volumes:
       - ./:/app
     working_dir: /app
+    # On Linux, uncomment to create files as your own user instead of root
+    # (replace with the output of `id -u` and `id -g`)
+    # user: "1000:1000"
     environment:
       - COCO_MCP_TRANSPORT=http
     restart: unless-stopped

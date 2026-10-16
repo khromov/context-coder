@@ -59,4 +59,54 @@ describe('InMemoryEventStore', () => {
     expect(streamId).toBe('');
     expect(sent).toEqual([]);
   });
+
+  describe('limits', () => {
+    it('should drop the oldest events beyond maxEvents', async () => {
+      const store = new InMemoryEventStore({ maxEvents: 3 });
+      const ids: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        ids.push(await store.storeEvent(i % 2 === 0 ? 'stream-a' : 'stream-b', message(i)));
+      }
+
+      expect(store.size).toBe(3);
+      expect(await store.getStreamIdForEventId(ids[0])).toBeUndefined();
+      expect(await store.getStreamIdForEventId(ids[1])).toBeUndefined();
+      expect(await store.getStreamIdForEventId(ids[2])).toBe('stream-a');
+
+      // Replay still works for the events that are kept
+      const { sent } = await replay(store, ids[2]);
+      expect(sent.map((event) => event.eventId)).toEqual([ids[4]]);
+    });
+
+    it('should drop events older than maxAgeMs when pruned', async () => {
+      let now = 1000;
+      const store = new InMemoryEventStore({ maxAgeMs: 500, now: () => now });
+
+      const old = await store.storeEvent('stream-a', message(1));
+      now = 1400;
+      const recent = await store.storeEvent('stream-a', message(2));
+
+      now = 1600;
+      store.prune();
+
+      expect(store.size).toBe(1);
+      expect(await store.getStreamIdForEventId(old)).toBeUndefined();
+      expect(await store.getStreamIdForEventId(recent)).toBe('stream-a');
+
+      now = 2000;
+      store.prune();
+      expect(store.size).toBe(0);
+    });
+
+    it('should also drop old events when storing new ones', async () => {
+      let now = 0;
+      const store = new InMemoryEventStore({ maxAgeMs: 100, now: () => now });
+
+      await store.storeEvent('stream-a', message(1));
+      now = 500;
+      await store.storeEvent('stream-b', message(2));
+
+      expect(store.size).toBe(1);
+    });
+  });
 });

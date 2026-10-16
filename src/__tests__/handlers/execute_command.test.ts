@@ -131,6 +131,29 @@ describe('handleExecuteCommand', () => {
     expect(result.content[0].text).not.toContain('timed out');
   });
 
+  it('should reject a timeout that is not a positive whole number', async () => {
+    const context = createTestContext(testDir);
+
+    await expect(
+      handleExecuteCommand({ command: 'echo hi', timeout: -1 }, context)
+    ).rejects.toThrow('Invalid arguments for execute_command');
+  });
+
+  it('should keep only the start and end of very long output', async () => {
+    const context = createTestContext(testDir);
+    const result = await handleExecuteCommand(
+      { command: `node -e "process.stdout.write('START' + 'x'.repeat(200000) + 'END')"` },
+      context
+    );
+    const text = result.content[0].text;
+
+    expect(result.isError).toBeFalsy();
+    expect(text).toContain('START');
+    expect(text).toContain('END');
+    expect(text).toMatch(/\[\.\.\. [\d,]+ bytes omitted \.\.\.\]/);
+    expect(text.length).toBeLessThan(50000);
+  });
+
   it('should remove finished commands from the running registry', async () => {
     const context = createTestContext(testDir);
     const pending = handleExecuteCommand({ command: 'echo done' }, context);
@@ -287,6 +310,17 @@ describe('handleExecuteCommand', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toBe('=== exit code: 1 ===');
     });
+
+    it('should give commands that read stdin end-of-file instead of waiting', async () => {
+      const context = createTestContext(testDir);
+      const start = Date.now();
+      // cat with no arguments reads stdin until end-of-file
+      const result = await handleExecuteCommand({ command: 'cat', timeout: 5000 }, context);
+
+      expect(Date.now() - start).toBeLessThan(3000);
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).not.toContain('timed out');
+    }, 10000);
   });
 
   describePosix('timeout', () => {
