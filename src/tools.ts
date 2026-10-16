@@ -16,7 +16,15 @@ import {
   ExecuteCommandArgsSchema,
 } from './schemas.js';
 import { ToolInput, ToolHandler } from './types.js';
-import { getClaudeCodePageSize } from './constants.js';
+import {
+  COMMAND_OUTPUT_HEAD_BYTES,
+  COMMAND_OUTPUT_TAIL_BYTES,
+  getClaudeCodePageSize,
+  getMode,
+  isEditMode,
+  ServerMode,
+} from './constants.js';
+import { resolveShell } from './lib/shell.js';
 
 // Import handlers
 import { handleGetCodebaseSize } from './handlers/get_codebase_size.js';
@@ -49,8 +57,8 @@ const miniTools: ToolWithHandler[] = [
     name: 'get_codebase_size',
     description:
       'Check the codebase size and token counts before processing. ' +
-      'Returns token counts for Claude and ChatGPT, warns if the codebase is too large, ' +
-      'and shows the largest files. ' +
+      'Returns token counts for Claude and ChatGPT, and when the codebase is over the token limit, ' +
+      'warns about it and lists the largest files. ' +
       'IMPORTANT: You should ALWAYS run this tool at the start of EVERY NEW CONVERSATION before any other operations. ' +
       'After running this tool, you should then call get_codebase to retrieve the actual code.',
     inputSchema: toInputSchema(GetCodebaseSizeArgsSchema),
@@ -59,9 +67,9 @@ const miniTools: ToolWithHandler[] = [
   {
     name: 'get_codebase',
     description:
-      'Generate a a merged markdown file of the entire codebase.' +
-      'Results are paginated.' +
-      `If more content exists, a message will prompt to call again with the next page number. Leave the _pageSize variable empty UNLESS you are running under Claude Code, in that case set it to ${getClaudeCodePageSize()} to work around the Claude Code limits.`,
+      'Generate a merged markdown file of the entire codebase. ' +
+      'Results are paginated: if more content exists, the result tells you to call again with the next page number. ' +
+      `Leave the _pageSize variable empty UNLESS you are running under Claude Code, in that case set it to ${getClaudeCodePageSize()} to work around the Claude Code limits.`,
     inputSchema: toInputSchema(GetCodebaseArgsSchema),
     handler: handleGetCodebase,
   },
@@ -69,15 +77,32 @@ const miniTools: ToolWithHandler[] = [
     name: 'get_codebase_top_largest_files',
     description:
       'Returns the top X largest files in the codebase. ' +
-      'Use this tool when users want to see more large files beyond the initial 10 shown in get_codebase_size. ' +
-      'Helpful for identifying which files to add to .cocoignore for large codebases.',
+      'Use this tool when users want to see which files take up the most space, ' +
+      'for example to decide what to add to .cocoignore or .cocominify for large codebases.',
     inputSchema: toInputSchema(GetCodebaseTopLargestFilesArgsSchema),
     handler: handleGetCodebaseTopLargestFiles,
   },
 ];
 
+const commandOutputLimitKb = Math.round(
+  Math.min(COMMAND_OUTPUT_HEAD_BYTES, COMMAND_OUTPUT_TAIL_BYTES) / 1000
+);
+
+// Only offered with --edit / --edit-file-mode
+const editFileTool: ToolWithHandler = {
+  name: 'edit_file',
+  description:
+    'Make exact text replacements in a file. Each edit replaces oldText with newText, and edits are applied in order. ' +
+    "Use relative paths with or without './' prefix (e.g., 'file.txt', './folder/file.txt'). " +
+    'If an oldText appears more than once, the call fails unless replaceAll is true, which replaces every occurrence. ' +
+    'Line endings in oldText and newText are matched to the file (LF or CRLF). ' +
+    'Use this tool only if you have a small, focused set of edits that need to be made. If you are making larger changes or are unsure, use the write_file tool instead.',
+  inputSchema: toInputSchema(EditFileArgsSchema),
+  handler: handleEditFile,
+};
+
 // Define additional tools for the full version
-const additionalTools = [
+const additionalTools: ToolWithHandler[] = [
   {
     name: 'read_file',
     description:
@@ -87,18 +112,7 @@ const additionalTools = [
     inputSchema: toInputSchema(ReadFileArgsSchema),
     handler: handleReadFile,
   },
-  process.env.CONTEXT_CODER_EDIT_MODE === 'true'
-    ? {
-        name: 'edit_file',
-        description:
-          'Make line-based edits to a text file. Each edit replaces exact line sequences ' +
-          "with new content. Use relative paths with or without './' prefix (e.g., 'file.txt', './folder/file.txt'). " +
-          'By default, throws an error if text appears multiple times. Set replace_all to true to replace all occurrences. ' +
-          'Use this tool only if you have a small, focused set of edits that need to be made. If you are making larger changes or are unsure, use the write_file tool instead.',
-        inputSchema: toInputSchema(EditFileArgsSchema),
-        handler: handleEditFile,
-      }
-    : undefined,
+  ...(isEditMode() ? [editFileTool] : []),
   {
     name: 'write_file',
     description:
@@ -161,7 +175,8 @@ const additionalTools = [
       'Recursively search for files by file name matching a pattern. ' +
       "Use relative paths with or without './' prefix for the search root. " +
       'The search is case-insensitive and matches partial file names. ' +
-      'Do NOT call this tool unless the user specifically asks to search for files or you get stuck and need it to debug something.' +
+      'It does not descend into dependency, version control and cache folders such as node_modules and .git, unless the search starts inside one. ' +
+      'Do NOT call this tool unless the user specifically asks to search for files or you get stuck and need it to debug something. ' +
       'Remember that you generally already have access to all the codebase, so there is little reason to search for files.',
     inputSchema: toInputSchema(SearchFilesArgsSchema),
     handler: handleSearchFiles,
@@ -171,31 +186,25 @@ const additionalTools = [
     description:
       'Execute a shell command with controlled environment. ' +
       "Pass the full command line as a string (e.g., 'npx -y ai-digest', 'ls -la'). " +
-      'The command runs through a shell (/bin/sh on POSIX, cmd.exe on Windows), so quoting, ' +
+      `The command runs through ${resolveShell().label}, so quoting, ` +
       'pipes, &&, redirects, globs and environment variable expansion work as usual. ' +
       'Quote shell metacharacters (& | ( ) ; # $ *) when you mean them literally, e.g. a URL containing &. ' +
       'Note that a non-zero exit code is not always a failure: grep, for example, exits with 1 when nothing matches. ' +
       'Commands are executed with a 60-second timeout (configurable) to prevent hanging; on timeout the command and any processes it started are killed and the result says it timed out. ' +
       'The call returns only once all output streams close, so background jobs must redirect their output (cmd >/dev/null 2>&1 &), otherwise the call blocks until the timeout. ' +
+      'Commands get no stdin, so anything that waits for input sees end-of-file instead. ' +
+      `Very long output keeps only the first and last ${commandOutputLimitKb} KB of stdout and of stderr. ` +
       'Returns stdout, stderr, and exit code. ' +
-      'Available CLI tools include: fzf (fuzzy finder), gh (GitHub CLI), jq (JSON processor), ' +
-      'dig/nslookup (DNS tools), iptables/ipset (network tools), claude-code (Claude CLI).',
+      'Which CLI tools are available depends on the machine; the Docker image includes git, gh (GitHub CLI), jq and dig/nslookup.',
     inputSchema: toInputSchema(ExecuteCommandArgsSchema),
     handler: handleExecuteCommand,
   },
-].filter((tool): tool is NonNullable<typeof tool> => tool !== undefined);
+];
 
-// Function to get tools based on runtime mode
-export function getTools(mode?: 'mini' | 'full'): ToolWithHandler[] {
-  // Determine mode from sources (in order of priority):
-  // 1. Explicit mode parameter
-  // 2. Runtime environment variable set by index.ts based on command line flags
-  // 3. Default to full (for npx usage)
-  const resolvedMode: 'mini' | 'full' =
-    mode || (process.env.CONTEXT_CODER_MODE as 'mini' | 'full') || 'full';
-
-  return resolvedMode === 'mini' ? miniTools : [...miniTools, ...additionalTools];
+/**
+ * Tools for a mode: the mini tools always, plus the file and command tools in full mode.
+ * Defaults to the mode set from the command line flags (full unless --mini).
+ */
+export function getTools(mode: ServerMode = getMode()): ToolWithHandler[] {
+  return mode === 'mini' ? miniTools : [...miniTools, ...additionalTools];
 }
-
-// Export default tools for backward compatibility (defaults to full)
-export const tools: ToolWithHandler[] = getTools();

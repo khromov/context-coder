@@ -29,7 +29,7 @@ describe('HTTP Server Integration Tests', () => {
         const srv = net.createServer();
         srv.unref();
         srv.on('error', reject);
-        srv.listen(0, () => {
+        srv.listen(0, '127.0.0.1', () => {
           const { port } = srv.address() as net.AddressInfo;
           srv.close(() => resolve(port));
         });
@@ -41,14 +41,19 @@ describe('HTTP Server Integration Tests', () => {
   const startServerOnPort = (port: number): Promise<{ process: ChildProcess; baseUrl: string }> => {
     return new Promise((resolve, reject) => {
       const indexPath = path.join(__dirname, '..', '..', 'dist', 'index.js');
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        COCO_MCP_TRANSPORT: 'http',
+        CONTEXT_CODER_MODE: 'mini',
+        COCO_DEV: 'true',
+      };
+      // Settings from the developer's shell must not change where the server listens
+      delete env.COCO_HOST;
+      delete env.COCO_ALLOWED_HOSTS;
+
       const serverProcess = spawn('node', [indexPath, '--mini', '--port', port.toString()], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          COCO_MCP_TRANSPORT: 'http',
-          CONTEXT_CODER_MODE: 'mini',
-          COCO_DEV: 'true',
-        },
+        env,
       });
 
       let startupComplete = false;
@@ -76,7 +81,7 @@ describe('HTTP Server Integration Tests', () => {
           clearTimeout(timeout);
           resolve({
             process: serverProcess,
-            baseUrl: `http://localhost:${port}`,
+            baseUrl: `http://127.0.0.1:${port}`,
           });
         }
       });
@@ -92,6 +97,14 @@ describe('HTTP Server Integration Tests', () => {
           reject(new Error(`Server exited early with code ${code}\nStderr: ${errorData}`));
         }
       });
+    });
+  };
+
+  const stopServer = async (serverProcess: ChildProcess): Promise<void> => {
+    serverProcess.kill('SIGTERM');
+    await new Promise<void>((resolve) => {
+      serverProcess.on('exit', () => resolve());
+      setTimeout(() => resolve(), 1000); // Fallback timeout
     });
   };
 
@@ -162,6 +175,17 @@ describe('HTTP Server Integration Tests', () => {
     });
   };
 
+  const initializeBody = JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2024-11-05',
+      capabilities: {},
+      clientInfo: { name: 'test-client', version: '1.0.0' },
+    },
+  });
+
   it('should start HTTP server and bind to specified port', async () => {
     const port = await getFreePort();
     const { process: serverProcess, baseUrl } = await startServerOnPort(port);
@@ -175,13 +199,7 @@ describe('HTTP Server Integration Tests', () => {
       expect(response.data).toHaveProperty('mode', 'mini');
       expect(response.data).toHaveProperty('version');
     } finally {
-      serverProcess.kill('SIGTERM');
-
-      // Wait for process to exit
-      await new Promise<void>((resolve) => {
-        serverProcess.on('exit', () => resolve());
-        setTimeout(() => resolve(), 1000); // Fallback timeout
-      });
+      await stopServer(serverProcess);
     }
   }, 15000);
 
@@ -232,11 +250,7 @@ describe('HTTP Server Integration Tests', () => {
       expect(jsonData.result).toHaveProperty('serverInfo');
       expect(jsonData.result.serverInfo).toHaveProperty('name', 'context-coder');
     } finally {
-      serverProcess.kill('SIGTERM');
-      await new Promise<void>((resolve) => {
-        serverProcess.on('exit', () => resolve());
-        setTimeout(() => resolve(), 1000);
-      });
+      await stopServer(serverProcess);
     }
   }, 15000);
 
@@ -248,16 +262,7 @@ describe('HTTP Server Integration Tests', () => {
       // First initialize to get session ID
       const initResponse = await sendHttpRequest(`${baseUrl}/mcp`, {
         method: 'POST',
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: {
-            protocolVersion: '2024-11-05',
-            capabilities: {},
-            clientInfo: { name: 'test-client', version: '1.0.0' },
-          },
-        }),
+        body: initializeBody,
       });
 
       expect(initResponse.status).toBe(200);
@@ -299,11 +304,7 @@ describe('HTTP Server Integration Tests', () => {
       expect(toolNames).toContain('get_codebase');
       expect(toolNames).toContain('get_codebase_top_largest_files');
     } finally {
-      serverProcess.kill('SIGTERM');
-      await new Promise<void>((resolve) => {
-        serverProcess.on('exit', () => resolve());
-        setTimeout(() => resolve(), 1000);
-      });
+      await stopServer(serverProcess);
     }
   }, 15000);
 
@@ -315,16 +316,7 @@ describe('HTTP Server Integration Tests', () => {
       // First establish session
       const initResponse = await sendHttpRequest(`${baseUrl}/mcp`, {
         method: 'POST',
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: {
-            protocolVersion: '2024-11-05',
-            capabilities: {},
-            clientInfo: { name: 'test-client', version: '1.0.0' },
-          },
-        }),
+        body: initializeBody,
       });
 
       // Extract session ID from SSE format
@@ -342,11 +334,7 @@ describe('HTTP Server Integration Tests', () => {
       // For StreamableHTTP, the initialize response itself confirms SSE is working
       // No need to make additional GET requests since all communication happens over POST with SSE responses
     } finally {
-      serverProcess.kill('SIGTERM');
-      await new Promise<void>((resolve) => {
-        serverProcess.on('exit', () => resolve());
-        setTimeout(() => resolve(), 1000);
-      });
+      await stopServer(serverProcess);
     }
   }, 15000);
 
@@ -374,13 +362,87 @@ describe('HTTP Server Integration Tests', () => {
       expect(response.data.error).toHaveProperty('message');
       expect(response.data.error.message).toContain('session ID');
     } finally {
-      serverProcess.kill('SIGTERM');
-      await new Promise<void>((resolve) => {
-        serverProcess.on('exit', () => resolve());
-        setTimeout(() => resolve(), 1000);
-      });
+      await stopServer(serverProcess);
     }
   }, 15000);
+
+  it('should not start a session for a non-initialize request without a session ID', async () => {
+    const port = await getFreePort();
+    const { process: serverProcess, baseUrl } = await startServerOnPort(port);
+
+    try {
+      const response = await sendHttpRequest(`${baseUrl}/mcp`, {
+        method: 'POST',
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      });
+      expect(response.status).toBeGreaterThanOrEqual(400);
+
+      const health = await sendHttpRequest(`${baseUrl}/health`);
+      expect(health.data.activeTransports).toBe(0);
+    } finally {
+      await stopServer(serverProcess);
+    }
+  }, 15000);
+
+  describe('Host and Origin checks (DNS rebinding protection)', () => {
+    it('should reject requests addressed to another host name', async () => {
+      const port = await getFreePort();
+      const { process: serverProcess, baseUrl } = await startServerOnPort(port);
+
+      try {
+        // What a browser sends after evil.example has been re-pointed at 127.0.0.1
+        const response = await sendHttpRequest(`${baseUrl}/mcp`, {
+          method: 'POST',
+          headers: { Host: `evil.example:${port}` },
+          body: initializeBody,
+        });
+
+        expect(response.status).toBe(403);
+        expect(response.data.error.message).toContain('Host "evil.example');
+
+        const health = await sendHttpRequest(`${baseUrl}/health`, {
+          headers: { Host: `evil.example:${port}` },
+        });
+        expect(health.status).toBe(403);
+      } finally {
+        await stopServer(serverProcess);
+      }
+    }, 15000);
+
+    it('should reject requests from another origin', async () => {
+      const port = await getFreePort();
+      const { process: serverProcess, baseUrl } = await startServerOnPort(port);
+
+      try {
+        const response = await sendHttpRequest(`${baseUrl}/mcp`, {
+          method: 'POST',
+          headers: { Origin: 'https://evil.example' },
+          body: initializeBody,
+        });
+
+        expect(response.status).toBe(403);
+        expect(response.data.error.message).toContain('Origin "https://evil.example"');
+      } finally {
+        await stopServer(serverProcess);
+      }
+    }, 15000);
+
+    it('should accept localhost host names and origins', async () => {
+      const port = await getFreePort();
+      const { process: serverProcess, baseUrl } = await startServerOnPort(port);
+
+      try {
+        for (const host of [`localhost:${port}`, `127.0.0.1:${port}`]) {
+          const response = await sendHttpRequest(`${baseUrl}/health`, {
+            headers: { Host: host, Origin: `http://localhost:${port}` },
+          });
+          expect(response.status).toBe(200);
+        }
+      } finally {
+        await stopServer(serverProcess);
+      }
+    }, 15000);
+  });
 
   // On Windows, kill() terminates the process without running its SIGTERM handler
   const describePosix = process.platform === 'win32' ? describe.skip : describe;
@@ -398,16 +460,7 @@ describe('HTTP Server Integration Tests', () => {
       try {
         const initResponse = await sendHttpRequest(`${baseUrl}/mcp`, {
           method: 'POST',
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'initialize',
-            params: {
-              protocolVersion: '2024-11-05',
-              capabilities: {},
-              clientInfo: { name: 'test-client', version: '1.0.0' },
-            },
-          }),
+          body: initializeBody,
         });
         const sessionId = initResponse.headers['mcp-session-id'];
         expect(sessionId).toBeTruthy();

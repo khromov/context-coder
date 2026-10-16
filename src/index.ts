@@ -1,20 +1,48 @@
 #!/usr/bin/env node
 
-import { program } from 'commander';
+import { program, InvalidArgumentError } from 'commander';
 import logger, { configureLogger } from './logger.js';
 import { getVersion } from './lib/version.js';
-import { getIgnoreFile, getMinifyFile } from './handlers/utils.js';
-import { DEFAULT_PAGE_SIZE, DEFAULT_CLAUDE_CODE_PAGE_SIZE } from './constants.js';
-import path from 'path';
+import { getIgnoreFile, getMinifyFile, getRootDir } from './handlers/utils.js';
+import {
+  DEFAULT_PAGE_SIZE,
+  DEFAULT_CLAUDE_CODE_PAGE_SIZE,
+  DEFAULT_CLAUDE_TOKEN_LIMIT,
+  DEFAULT_GPT_TOKEN_LIMIT,
+} from './constants.js';
+
+// Options of the main (server) command, as parsed by commander
+interface ServerOptions {
+  mini?: boolean;
+  full?: boolean;
+  stdio?: boolean;
+  edit?: boolean;
+  editFileMode?: boolean;
+  port?: number;
+  host?: string;
+  allowedHosts?: string;
+  claudeTokenLimit?: number;
+  gptTokenLimit?: number;
+  pageSize?: number;
+  claudeCodePageSize?: number;
+}
+
+// Commander passes the previous value as a second argument, which parseInt would take as the
+// radix, so numeric options are parsed here instead
+function parsePositiveIntOption(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new InvalidArgumentError('Must be a positive whole number.');
+  }
+  return parsed;
+}
 
 /**
  * Check for ignore and minify files and show helpful tips if they don't exist
  */
 async function showStartupTips(): Promise<void> {
   try {
-    // Determine the root directory based on environment
-    const ROOT_DIR = process.env.COCO_DEV === 'true' ? './mount' : './';
-    const absoluteRootDir = path.resolve(ROOT_DIR);
+    const absoluteRootDir = getRootDir();
 
     const ignoreFile = await getIgnoreFile(absoluteRootDir);
     const minifyFile = await getMinifyFile(absoluteRootDir);
@@ -37,10 +65,7 @@ async function showStartupTips(): Promise<void> {
 }
 
 // Async function to run the server
-async function runServer(options: any, _command: any) {
-  // Store port from command line argument (don't override env)
-  const serverPort = options.port;
-
+async function runServer(options: ServerOptions): Promise<void> {
   // Store token limits from command line arguments
   if (options.claudeTokenLimit) {
     process.env.COCO_CLAUDE_TOKEN_LIMIT = options.claudeTokenLimit.toString();
@@ -57,15 +82,12 @@ async function runServer(options: any, _command: any) {
     process.env.COCO_CLAUDE_CODE_PAGE_SIZE = options.claudeCodePageSize.toString();
   }
 
-  // Determine mode based on command line flags
-  // Default to full for npx usage, mini/full passed explicitly by Docker entrypoint
-  let isFullMode = true; // Default to full
-
-  if (options.mini) {
-    isFullMode = false;
-  } else if (options.full) {
-    isFullMode = true;
+  if (options.allowedHosts) {
+    process.env.COCO_ALLOWED_HOSTS = options.allowedHosts;
   }
+
+  // Full mode is the default (npx usage); mini must be requested with --mini
+  const mode = options.mini ? 'mini' : 'full';
 
   let transportMode = 'http'; // Default to http
   if (process.env.COCO_MCP_TRANSPORT) {
@@ -75,7 +97,6 @@ async function runServer(options: any, _command: any) {
   }
 
   // Set the mode globally for other modules to access
-  const mode = isFullMode ? 'full' : 'mini';
   process.env.CONTEXT_CODER_MODE = mode;
 
   if (options.editFileMode || options.edit) {
@@ -88,18 +109,15 @@ async function runServer(options: any, _command: any) {
   // Log startup information
   logger.info(`Current directory: ${process.cwd()}`);
 
-  // Log token limit overrides if any
-  const defaultClaudeLimit = 150000;
-  const defaultGptLimit = 128000;
-
-  if (options.claudeTokenLimit && options.claudeTokenLimit !== defaultClaudeLimit) {
+  // Log overrides of the defaults, if any
+  if (options.claudeTokenLimit && options.claudeTokenLimit !== DEFAULT_CLAUDE_TOKEN_LIMIT) {
     logger.info(
-      `🎯 Claude token limit overridden: ${defaultClaudeLimit.toLocaleString()} -> ${options.claudeTokenLimit.toLocaleString()}`
+      `🎯 Claude token limit overridden: ${DEFAULT_CLAUDE_TOKEN_LIMIT.toLocaleString()} -> ${options.claudeTokenLimit.toLocaleString()}`
     );
   }
-  if (options.gptTokenLimit && options.gptTokenLimit !== defaultGptLimit) {
+  if (options.gptTokenLimit && options.gptTokenLimit !== DEFAULT_GPT_TOKEN_LIMIT) {
     logger.info(
-      `🎯 GPT token limit overridden: ${defaultGptLimit.toLocaleString()} -> ${options.gptTokenLimit.toLocaleString()}`
+      `🎯 GPT token limit overridden: ${DEFAULT_GPT_TOKEN_LIMIT.toLocaleString()} -> ${options.gptTokenLimit.toLocaleString()}`
     );
   }
   if (options.pageSize && options.pageSize !== DEFAULT_PAGE_SIZE) {
@@ -114,18 +132,21 @@ async function runServer(options: any, _command: any) {
   }
 
   try {
+    // Transports are imported only now, after the env vars above are set: tools.ts reads
+    // them at module load time to build the tool list and descriptions
     if (transportMode === 'stdio') {
       const { startStdioServer } = await import('./stdio.js');
       await startStdioServer();
     } else {
       const { startHttpServer } = await import('./streamableHttp.js');
-      await startHttpServer(serverPort);
+      await startHttpServer(options.port, options.host);
     }
 
     // Show startup tips about ignore and minify files
     await showStartupTips();
   } catch (error) {
-    logger.error('Error running server:', error);
+    logger.error(`Error running server: ${error instanceof Error ? error.message : String(error)}`);
+    logger.debug('Error details:', error);
     process.exit(1);
   }
 }
@@ -140,26 +161,34 @@ program
   .option('-s, --stdio', 'use stdio transport instead of HTTP')
   .option('-e, --edit', 'use edit_file tool instead of write_file (partial edits)')
   .option('--edit-file-mode', 'use edit_file tool instead of write_file (partial edits)')
-  .option('-p, --port <number>', 'port to listen on (default: 3001)', parseInt)
+  .option('-p, --port <number>', 'port to listen on (default: 3001)', parsePositiveIntOption)
+  .option(
+    '--host <address>',
+    'address to listen on in HTTP mode (default: 127.0.0.1, this computer only; 0.0.0.0 listens on all interfaces)'
+  )
+  .option(
+    '--allowed-hosts <hosts>',
+    'comma-separated hostnames to accept in the Host and Origin headers in HTTP mode, besides localhost'
+  )
   .option(
     '-c, --claude-token-limit <number>',
     'set Claude token limit warning - going over this limit will issue a warning when calling get_codebase_size (default: 150000)',
-    parseInt
+    parsePositiveIntOption
   )
   .option(
     '-g, --gpt-token-limit <number>',
     'set GPT token limit warning - going over this limit will issue a warning when calling get_codebase_size (default: 128000)',
-    parseInt
+    parsePositiveIntOption
   )
   .option(
     '--page-size <number>',
     'set the get_codebase pagination page size in characters (default: 99000; Claude Desktop caps pages at 100000 characters)',
-    parseInt
+    parsePositiveIntOption
   )
   .option(
     '--claude-code-page-size <number>',
     'set the _pageSize value the model is told to use when running under Claude Code - this value is reported in the get_codebase tool description (default: 30000)',
-    parseInt
+    parsePositiveIntOption
   )
   .action(runServer);
 

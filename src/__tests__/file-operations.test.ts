@@ -13,6 +13,9 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// File permission bits are a POSIX concept
+const itPosix = process.platform === 'win32' ? it.skip : it;
+
 describe('file-operations', () => {
   const TEST_DIR = path.join(__dirname, 'test-file-operations-temp');
 
@@ -103,6 +106,34 @@ describe('file-operations', () => {
       expect(results.some((result) => result.includes('another.js'))).toBe(true);
     });
 
+    it('should not descend into node_modules or .git without exclude patterns', async () => {
+      await fs.writeFile(path.join(searchTestDir, 'node_modules', 'test-dependency.js'), '');
+      await fs.mkdir(path.join(searchTestDir, '.git'), { recursive: true });
+      await fs.writeFile(path.join(searchTestDir, '.git', 'test-object'), '');
+
+      const results = await searchFiles(searchTestDir, 'test');
+
+      expect(results).toHaveLength(2);
+      expect(results.some((result) => result.includes('node_modules'))).toBe(false);
+      expect(results.some((result) => result.includes('.git'))).toBe(false);
+    });
+
+    it('should still search inside node_modules when the search starts there', async () => {
+      await fs.writeFile(path.join(searchTestDir, 'node_modules', 'test-dependency.js'), '');
+
+      const results = await searchFiles(path.join(searchTestDir, 'node_modules'), 'test');
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toContain('test-dependency.js');
+    });
+
+    it('should still match skipped folders by name', async () => {
+      const results = await searchFiles(searchTestDir, 'node_modules');
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toBe(path.join(searchTestDir, 'node_modules'));
+    });
+
     it('should return empty array when no matches found', async () => {
       const results = await searchFiles(searchTestDir, 'nonexistent');
 
@@ -186,7 +217,7 @@ describe('file-operations', () => {
     });
 
     it('should build correct tree structure', async () => {
-      const tree = await buildTree(treeTestDir, [treeTestDir]);
+      const tree = await buildTree(treeTestDir);
 
       expect(tree).toHaveLength(4); // package.json, README.md, src, lib (node_modules should be ignored)
 
@@ -207,7 +238,7 @@ describe('file-operations', () => {
     });
 
     it('should ignore default patterns', async () => {
-      const tree = await buildTree(treeTestDir, [treeTestDir]);
+      const tree = await buildTree(treeTestDir);
 
       // node_modules should be ignored
       const nodeModulesEntry = tree.find((entry) => entry.name === 'node_modules');
@@ -218,7 +249,7 @@ describe('file-operations', () => {
       const emptyDir = path.join(TEST_DIR, 'empty-tree-test');
       await fs.mkdir(emptyDir, { recursive: true });
 
-      const tree = await buildTree(emptyDir, [emptyDir]);
+      const tree = await buildTree(emptyDir);
       expect(tree).toHaveLength(0);
 
       await fs.rmdir(emptyDir);
@@ -230,7 +261,7 @@ describe('file-operations', () => {
       await fs.mkdir(path.join(ignoredDir, 'node_modules'), { recursive: true });
       await fs.writeFile(path.join(ignoredDir, 'node_modules', 'test.js'), 'test');
 
-      const tree = await buildTree(ignoredDir, [ignoredDir]);
+      const tree = await buildTree(ignoredDir);
       expect(tree).toHaveLength(0);
 
       await fs.rm(ignoredDir, { recursive: true });
@@ -276,6 +307,18 @@ describe('file-operations', () => {
 
       const writtenContent = await fs.readFile(testFile, 'utf-8');
       expect(writtenContent).toBe(newContent);
+    });
+
+    itPosix('should keep the permissions of a file it overwrites', async () => {
+      const testFile = path.join(writeTestDir, 'script.sh');
+      await fs.writeFile(testFile, '#!/bin/sh\necho old\n');
+      await fs.chmod(testFile, 0o755);
+
+      await writeFileSecure(testFile, '#!/bin/sh\necho new\n');
+
+      const { mode } = await fs.stat(testFile);
+      expect(mode & 0o777).toBe(0o755);
+      expect(await fs.readFile(testFile, 'utf-8')).toBe('#!/bin/sh\necho new\n');
     });
 
     it('should handle concurrent writes to the same file', async () => {
@@ -402,7 +445,7 @@ describe('file-operations', () => {
       expect(searchResults[0]).toContain('integration.txt');
 
       // Build tree
-      const tree = await buildTree(integrationTestDir, [integrationTestDir]);
+      const tree = await buildTree(integrationTestDir);
       expect(tree).toHaveLength(1);
       expect(tree[0].name).toBe('integration.txt');
       expect(tree[0].type).toBe('file');
@@ -432,7 +475,7 @@ describe('file-operations', () => {
       expect(actualJsFiles).toHaveLength(3);
 
       // Build complete tree
-      const tree = await buildTree(integrationTestDir, [integrationTestDir]);
+      const tree = await buildTree(integrationTestDir);
       expect(tree).toHaveLength(3); // package.json, src, tests
 
       const srcEntry = tree.find((entry) => entry.name === 'src');

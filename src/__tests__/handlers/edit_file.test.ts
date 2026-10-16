@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import fs from 'fs/promises';
+import path from 'path';
 import { handleEditFile } from '../../handlers/edit_file.js';
 import {
   setupTestDir,
@@ -7,6 +9,11 @@ import {
   readTestFile,
   createTestFile,
 } from './test-utils.js';
+
+const itPosix = process.platform === 'win32' ? it.skip : it;
+
+const AMBIGUOUS_MATCH_ERROR =
+  'Found 3 matches of the string to replace, but replaceAll is false. To replace all occurrences, set replaceAll to true. To replace only one occurrence, please provide more context to uniquely identify the instance.';
 
 describe('handleEditFile', () => {
   let testDir: string;
@@ -100,6 +107,89 @@ describe('handleEditFile', () => {
       expect(result.content[0].text).toBe('Successfully applied 1 edit(s) to test.txt');
       expect(await readTestFile(testDir, 'test.txt')).toBe('Modified content');
     });
+
+    itPosix('should keep the permissions of the edited file', async () => {
+      await createTestFile(testDir, 'run.sh', '#!/bin/sh\necho old\n');
+      await fs.chmod(path.join(testDir, 'run.sh'), 0o755);
+
+      const context = createTestContext(testDir);
+      await handleEditFile(
+        { path: 'run.sh', edits: [{ oldText: 'echo old', newText: 'echo new' }] },
+        context
+      );
+
+      const { mode } = await fs.stat(path.join(testDir, 'run.sh'));
+      expect(mode & 0o777).toBe(0o755);
+    });
+  });
+
+  describe('replacement text is inserted literally', () => {
+    // String.replace would expand these patterns: $' inserts the text after the match,
+    // $` the text before it, $& the match itself, and $$ becomes a single $
+    it.each([["IFS=$'\\n'"], ['echo "pid: $$"'], ['wrap($&)'], ['before $` after']])(
+      'should keep %s exactly as written',
+      async (newText) => {
+        await createTestFile(testDir, 'script.sh', 'start\nPLACEHOLDER\nend\n');
+
+        const context = createTestContext(testDir);
+        await handleEditFile(
+          { path: 'script.sh', edits: [{ oldText: 'PLACEHOLDER', newText }] },
+          context
+        );
+
+        expect(await readTestFile(testDir, 'script.sh')).toBe(`start\n${newText}\nend\n`);
+      }
+    );
+
+    it('should keep $ patterns literal with replaceAll', async () => {
+      await createTestFile(testDir, 'prices.txt', 'X and X');
+
+      const context = createTestContext(testDir);
+      await handleEditFile(
+        { path: 'prices.txt', edits: [{ oldText: 'X', newText: '$$5' }], replaceAll: true },
+        context
+      );
+
+      expect(await readTestFile(testDir, 'prices.txt')).toBe('$$5 and $$5');
+    });
+  });
+
+  describe('line endings', () => {
+    it('should match LF text against a CRLF file and keep CRLF line endings', async () => {
+      await createTestFile(testDir, 'crlf.txt', 'one\r\ntwo\r\nthree\r\n');
+
+      const context = createTestContext(testDir);
+      await handleEditFile(
+        { path: 'crlf.txt', edits: [{ oldText: 'one\ntwo', newText: 'uno\ndos\nextra' }] },
+        context
+      );
+
+      expect(await readTestFile(testDir, 'crlf.txt')).toBe('uno\r\ndos\r\nextra\r\nthree\r\n');
+    });
+
+    it('should use CRLF for new lines added to a CRLF file', async () => {
+      await createTestFile(testDir, 'crlf.txt', 'one\r\ntwo\r\n');
+
+      const context = createTestContext(testDir);
+      await handleEditFile(
+        { path: 'crlf.txt', edits: [{ oldText: 'two', newText: 'two\nthree' }] },
+        context
+      );
+
+      expect(await readTestFile(testDir, 'crlf.txt')).toBe('one\r\ntwo\r\nthree\r\n');
+    });
+
+    it('should edit LF sections of a file with mixed line endings as they are', async () => {
+      await createTestFile(testDir, 'mixed.txt', 'a\r\nb\nc\n');
+
+      const context = createTestContext(testDir);
+      await handleEditFile(
+        { path: 'mixed.txt', edits: [{ oldText: 'b\nc', newText: 'x\ny' }] },
+        context
+      );
+
+      expect(await readTestFile(testDir, 'mixed.txt')).toBe('a\r\nx\ny\n');
+    });
   });
 
   describe('dry run functionality', () => {
@@ -174,6 +264,39 @@ describe('handleEditFile', () => {
       expect(diffText).toContain('+New Line B');
       expect(diffText).toContain('+New Line C');
     });
+
+    it('should apply edits in order in a dry run, like a real edit', async () => {
+      await createTestFile(testDir, 'test.txt', 'alpha');
+
+      const context = createTestContext(testDir);
+      // The second edit matches text the first one creates
+      const result = await handleEditFile(
+        {
+          path: 'test.txt',
+          edits: [
+            { oldText: 'alpha', newText: 'beta' },
+            { oldText: 'beta', newText: 'gamma' },
+          ],
+          dryRun: true,
+        },
+        context
+      );
+
+      expect(result.content[0].text).toContain('+gamma');
+      expect(await readTestFile(testDir, 'test.txt')).toBe('alpha');
+    });
+
+    it('should report text that is not found in a dry run', async () => {
+      await createTestFile(testDir, 'test.txt', 'Hello world');
+
+      const context = createTestContext(testDir);
+      await expect(
+        handleEditFile(
+          { path: 'test.txt', edits: [{ oldText: 'missing', newText: 'x' }], dryRun: true },
+          context
+        )
+      ).rejects.toThrow('Text not found in file: "missing"');
+    });
   });
 
   describe('error handling', () => {
@@ -226,9 +349,7 @@ describe('handleEditFile', () => {
           },
           context
         )
-      ).rejects.toThrow(
-        'Found 3 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.'
-      );
+      ).rejects.toThrow(AMBIGUOUS_MATCH_ERROR);
     });
 
     it('should handle long text in error messages', async () => {
@@ -262,6 +383,35 @@ describe('handleEditFile', () => {
           context
         )
       ).rejects.toThrow('Invalid arguments for edit_file');
+    });
+
+    it('should reject an empty oldText', async () => {
+      await createTestFile(testDir, 'test.txt', 'abc');
+      const context = createTestContext(testDir);
+
+      await expect(
+        handleEditFile({ path: 'test.txt', edits: [{ oldText: '', newText: 'x' }] }, context)
+      ).rejects.toThrow('Invalid arguments for edit_file');
+      expect(await readTestFile(testDir, 'test.txt')).toBe('abc');
+    });
+
+    it('should not write anything when a later edit fails', async () => {
+      await createTestFile(testDir, 'test.txt', 'one two');
+      const context = createTestContext(testDir);
+
+      await expect(
+        handleEditFile(
+          {
+            path: 'test.txt',
+            edits: [
+              { oldText: 'one', newText: '1' },
+              { oldText: 'missing', newText: 'x' },
+            ],
+          },
+          context
+        )
+      ).rejects.toThrow('Text not found');
+      expect(await readTestFile(testDir, 'test.txt')).toBe('one two');
     });
   });
 
@@ -563,9 +713,25 @@ describe('handleEditFile', () => {
           },
           context
         )
-      ).rejects.toThrow(
-        'Found 3 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.'
+      ).rejects.toThrow(AMBIGUOUS_MATCH_ERROR);
+    });
+
+    it('should accept the replaceAll argument named in the error message', async () => {
+      await createTestFile(testDir, 'test.txt', 'test line\nanother test line\nfinal test line');
+      const context = createTestContext(testDir);
+
+      const error = await handleEditFile(
+        { path: 'test.txt', edits: [{ oldText: 'test', newText: 'x' }] },
+        context
+      ).catch((e: Error) => e);
+      // Retrying with the argument the error message names must work
+      expect(String(error)).toContain('set replaceAll to true');
+
+      await handleEditFile(
+        { path: 'test.txt', edits: [{ oldText: 'test', newText: 'x' }], replaceAll: true },
+        context
       );
+      expect(await readTestFile(testDir, 'test.txt')).toBe('x line\nanother x line\nfinal x line');
     });
   });
 });

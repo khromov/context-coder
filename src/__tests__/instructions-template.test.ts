@@ -1,113 +1,113 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeAll } from '@jest/globals';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { processInstructions } from '../lib/instructions.js';
 
-describe('Instructions Template Processing', () => {
-  let originalEditMode: string | undefined;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-  beforeEach(() => {
-    // Save original edit mode
-    originalEditMode = process.env.CONTEXT_CODER_EDIT_MODE;
-  });
+describe('processInstructions', () => {
+  const sampleInstructions = `
+### 3. Work
 
-  afterEach(() => {
-    // Restore original edit mode
-    if (originalEditMode !== undefined) {
-      process.env.CONTEXT_CODER_EDIT_MODE = originalEditMode;
-    } else {
-      delete process.env.CONTEXT_CODER_EDIT_MODE;
-    }
-  });
+Shared text
 
-  describe('processInstructionsForEditMode', () => {
-    const sampleInstructions = `
+<!-- full-mode -->
 ### 4. Modify with Confidence
-
-Use editing tools to make changes:
 
 {EDIT_FILE_TOOL_LIST}
 - \`write_file\` - Create or completely overwrite files
-- \`create_directory\` - Set up new directories
 
 {EDITING_STRATEGY}
+<!-- /full-mode -->
+
+<!-- mini-mode -->
+### 4. Use Your Own Tools
+<!-- /mini-mode -->
 
 ## Best Practices
 
-3. {EFFICIENT_EDITING_PRACTICE}
-    `;
+<!-- full-mode -->
+- {EFFICIENT_EDITING_PRACTICE}
+<!-- /full-mode -->
+`;
 
-    it('should replace placeholders when edit mode is enabled', () => {
-      const result = processInstructionsForTestMode(sampleInstructions, true);
+  it('should fill in the edit_file text when edit mode is enabled', () => {
+    const result = processInstructions(sampleInstructions, { mode: 'full', editMode: true });
 
-      // Check that placeholders are replaced
-      expect(result).not.toContain('{EDIT_FILE_TOOL_LIST}');
-      expect(result).not.toContain('{EDITING_STRATEGY}');
-      expect(result).not.toContain('{EFFICIENT_EDITING_PRACTICE}');
+    expect(result).not.toMatch(/\{[A-Z_]+\}/);
+    expect(result).toContain('- `edit_file` - Make exact text replacements in files');
+    expect(result).toContain('Use `edit_file` for small, targeted changes');
+    expect(result).toContain('`write_file` when rewriting entire files');
+    expect(result).toContain('### 4. Modify with Confidence');
+    expect(result).not.toContain('### 4. Use Your Own Tools');
+  });
 
-      // Check that edit_file content is included
-      expect(result).toContain('- `edit_file` - Make line-based partial edits to files');
-      expect(result).toContain('Use `edit_file` for small, targeted changes');
-      expect(result).toContain('write_file` when rewriting entire files');
+  it('should leave out edit_file when edit mode is disabled', () => {
+    const result = processInstructions(sampleInstructions, { mode: 'full', editMode: false });
+
+    expect(result).not.toMatch(/\{[A-Z_]+\}/);
+    expect(result).not.toContain('edit_file');
+    expect(result).toContain('Use `write_file` to create or completely overwrite files');
+    expect(result).toContain('complete file rewrites');
+  });
+
+  it('should keep only the mini-mode sections in mini mode', () => {
+    const result = processInstructions(sampleInstructions, { mode: 'mini', editMode: false });
+
+    expect(result).toContain('### 4. Use Your Own Tools');
+    expect(result).not.toContain('Modify with Confidence');
+    expect(result).not.toContain('write_file');
+    expect(result).not.toContain('Efficient Editing');
+    expect(result).toContain('Shared text');
+  });
+
+  it('should remove the mode markers and collapse leftover blank lines', () => {
+    const result = processInstructions(sampleInstructions, { mode: 'full', editMode: false });
+
+    expect(result).not.toContain('<!--');
+    expect(result).not.toMatch(/\n{3,}/);
+  });
+
+  describe('the real instructions.md', () => {
+    let template: string;
+
+    beforeAll(async () => {
+      template = await fs.readFile(path.join(__dirname, '..', '..', 'instructions.md'), 'utf-8');
     });
 
-    it('should replace placeholders when edit mode is disabled', () => {
-      const result = processInstructionsForTestMode(sampleInstructions, false);
+    it.each([
+      { mode: 'full' as const, editMode: false },
+      { mode: 'full' as const, editMode: true },
+      { mode: 'mini' as const, editMode: false },
+      { mode: 'mini' as const, editMode: true },
+    ])('should leave no placeholders or markers ($mode, edit: $editMode)', (options) => {
+      const result = processInstructions(template, options);
 
-      // Check that placeholders are replaced
-      expect(result).not.toContain('{EDIT_FILE_TOOL_LIST}');
-      expect(result).not.toContain('{EDITING_STRATEGY}');
-      expect(result).not.toContain('{EFFICIENT_EDITING_PRACTICE}');
-
-      // Check that edit_file content is NOT included
-      expect(result).not.toContain('edit_file');
-
-      // Check that correct content is included
-      expect(result).toContain('Use `write_file` to create or completely overwrite files');
-      expect(result).toContain('complete file rewrites');
+      expect(result).not.toMatch(/\{[A-Z_]+\}/);
+      expect(result).not.toContain('<!--');
+      expect(result).toContain('get_codebase_size');
     });
 
-    it('should handle empty EDIT_FILE_TOOL_LIST placeholder correctly', () => {
-      const result = processInstructionsForTestMode(sampleInstructions, false);
+    it('should only mention the file tools in full mode', () => {
+      const full = processInstructions(template, { mode: 'full', editMode: true });
+      const mini = processInstructions(template, { mode: 'mini', editMode: true });
 
-      // Check that the line with EDIT_FILE_TOOL_LIST is empty when edit mode is disabled
-      const lines = result.split('\n');
-      const editFileToolListLineIndex = lines.findIndex(
-        (line) => line.includes('- `write_file`') && lines[lines.indexOf(line) - 1] === ''
-      );
+      for (const tool of ['read_file', 'write_file', 'edit_file', 'execute_command']) {
+        expect(full).toContain(tool);
+        expect(mini).not.toContain(tool);
+      }
+    });
 
-      expect(editFileToolListLineIndex).toBeGreaterThan(-1);
+    it('should show ignore patterns as written', () => {
+      const result = processInstructions(template, { mode: 'full', editMode: false });
+
+      expect(result).toContain('\n*.min.js\n');
+      expect(result).toContain('\n*.csv\n');
+      expect(result).toContain('\n*.json\n');
+      expect(result).not.toContain('_.csv');
+      expect(result).not.toContain('\\*.min.js');
     });
   });
 });
-
-// Helper function that mimics the logic from mcp.ts
-function processInstructionsForTestMode(instructions: string, editModeEnabled: boolean): string {
-  let processed = instructions;
-
-  if (editModeEnabled) {
-    // Replace placeholders with edit_file enabled content
-    processed = processed.replace(
-      '{EDIT_FILE_TOOL_LIST}',
-      '- `edit_file` - Make line-based partial edits to files'
-    );
-    processed = processed.replace(
-      '{EDITING_STRATEGY}',
-      '**Editing Strategy**: Use `edit_file` for small, targeted changes and `write_file` when rewriting entire files or making extensive changes.'
-    );
-    processed = processed.replace(
-      '{EFFICIENT_EDITING_PRACTICE}',
-      '**Efficient Editing**: Use `edit_file` for small changes, `write_file` for larger edits'
-    );
-  } else {
-    // Replace placeholders with edit_file disabled content
-    processed = processed.replace('{EDIT_FILE_TOOL_LIST}', '');
-    processed = processed.replace(
-      '{EDITING_STRATEGY}',
-      '**Editing Strategy**: Use `write_file` to create or completely overwrite files with new content.'
-    );
-    processed = processed.replace(
-      '{EFFICIENT_EDITING_PRACTICE}',
-      '**Efficient Editing**: Use `write_file` for complete file rewrites'
-    );
-  }
-
-  return processed;
-}

@@ -1,11 +1,6 @@
 import aiDigest from 'ai-digest';
-import {
-  getIgnoreFile,
-  getMinifyFile,
-  getMinifyFileDescription,
-  normalizeDisplayPath,
-} from './handlers/utils.js';
-import { getConfiguredPageSize } from './constants.js';
+import { getIgnoreFile, getMinifyFile, getMinifyFileDescription } from './handlers/utils.js';
+import { getConfiguredPageSize, getMode } from './constants.js';
 import logger from './logger.js';
 
 export interface CodebaseDigestOptions {
@@ -21,118 +16,6 @@ export interface CodebaseDigestResult {
   nextPage?: number;
 }
 
-export interface CodebaseSizeOptions {
-  inputDir: string;
-}
-
-export interface CodebaseSizeResult {
-  content: string;
-  hasWarning: boolean;
-  totalClaudeTokens: number;
-  totalGptTokens: number;
-  totalFiles: number;
-}
-
-/**
- * Check codebase size and provide warnings if too large
- */
-export async function getCodebaseSize(options: CodebaseSizeOptions): Promise<CodebaseSizeResult> {
-  const { inputDir } = options;
-
-  // Check for .cocoignore file
-  const ignoreFile = await getIgnoreFile(inputDir);
-  if (ignoreFile) {
-    logger.debug(`📋 Using ignore file: ${ignoreFile}`);
-  }
-
-  // Check for .cocominify file
-  const minifyFile = await getMinifyFile(inputDir);
-  if (minifyFile) {
-    logger.debug(`📋 Using minify file: ${minifyFile}`);
-  }
-
-  // Get file statistics without content
-  const stats = await aiDigest.getFileStats({
-    inputDir,
-    ignoreFile,
-    minifyFile,
-    silent: true,
-    additionalDefaultIgnores: ['.cocoignore', '.cocominify'],
-  });
-
-  // Sort files by size (largest first) - they should already be sorted by ai-digest
-  const sortedFiles = stats.files || [];
-
-  let output = '';
-
-  // Check token counts and provide warnings
-  const claudeTokenLimit = 150000;
-  const gptTokenLimit = 128000;
-
-  let hasWarning = false;
-
-  if (stats.totalClaudeTokens > claudeTokenLimit) {
-    hasWarning = true;
-    output += `⚠️ **WARNING: Large Codebase Detected for Claude**\n\n`;
-    output += `The codebase contains ${stats.totalClaudeTokens.toLocaleString()} Claude tokens, which exceeds the recommended limit of ${claudeTokenLimit.toLocaleString()} tokens.\n\n`;
-    output += `This may cause issues with Claude's context window. You should create a \`.cocoignore\` file in the root of your project (similar to .gitignore) to exclude unnecessary files.\n\n`;
-  }
-
-  if (stats.totalGptTokens > gptTokenLimit) {
-    if (!hasWarning) {
-      output += `⚠️ **WARNING: Large Codebase Detected**\n\n`;
-    }
-    output += `Note: The codebase also contains ${stats.totalGptTokens.toLocaleString()} ChatGPT tokens (limit: ${gptTokenLimit.toLocaleString()}).\n\n`;
-  }
-
-  // Show token summary
-  output += `## Token Summary\n\n`;
-  output += `- **Claude tokens**: ${stats.totalClaudeTokens.toLocaleString()}\n`;
-  output += `- **ChatGPT tokens**: ${stats.totalGptTokens.toLocaleString()}\n`;
-  output += `- **Total files**: ${sortedFiles.length}\n\n`;
-
-  // Show top 10 largest files
-  if (sortedFiles.length > 0) {
-    output += `## Top 10 Largest Files\n\n`;
-    output += `Consider adding some of these to your \`.cocoignore\` file:\n\n`;
-
-    const top10Files = sortedFiles.slice(0, 10);
-    top10Files.forEach((file, index) => {
-      const sizeInKB = (file.sizeInBytes / 1024).toFixed(2);
-      const displayPath = normalizeDisplayPath(file.path, inputDir);
-      output += `${index + 1}. \`${displayPath}\` - ${sizeInKB} KB\n`;
-    });
-
-    if (sortedFiles.length > 10) {
-      output += `\n... and ${sortedFiles.length - 10} more files.\n`;
-    }
-  }
-
-  // Add instruction to run get_codebase next
-  output += `\n## Next Step\n\n`;
-  output += `Now run \`get_codebase\` to retrieve the actual codebase content.`;
-
-  // Store the top 100 files in case user asks for more
-  const top100Files = sortedFiles.slice(0, 100).map((file, index) => {
-    const sizeInKB = (file.sizeInBytes / 1024).toFixed(2);
-    const displayPath = normalizeDisplayPath(file.path, inputDir);
-    return `${index + 1}. ${displayPath} - ${sizeInKB} KB`;
-  });
-
-  // Add hidden comment with top 100 for potential follow-up
-  if (sortedFiles.length > 10) {
-    output += `\n\n<!-- Top largest files (hidden):\n${top100Files.join('\n')}\n-->`;
-  }
-
-  return {
-    content: output,
-    hasWarning,
-    totalClaudeTokens: stats.totalClaudeTokens,
-    totalGptTokens: stats.totalGptTokens,
-    totalFiles: sortedFiles.length,
-  };
-}
-
 /**
  * Generate a paginated codebase digest using ai-digest
  * Large files (> pageSize) are replaced with omission messages
@@ -141,6 +24,13 @@ export async function generateCodebaseDigest(
   options: CodebaseDigestOptions
 ): Promise<CodebaseDigestResult> {
   const { inputDir, page = 1, pageSize = getConfiguredPageSize() } = options;
+
+  if (!Number.isInteger(page) || page < 1) {
+    throw new Error(`page must be a positive whole number (got: ${page})`);
+  }
+  if (!Number.isInteger(pageSize) || pageSize < 1) {
+    throw new Error(`pageSize must be a positive whole number (got: ${pageSize})`);
+  }
 
   // Check for .cocoignore file
   const ignoreFile = await getIgnoreFile(inputDir);
@@ -156,6 +46,12 @@ export async function generateCodebaseDigest(
 
   // Use the shared minify file description function
   const minifyFileDescription = getMinifyFileDescription;
+
+  // Mini mode has no read_file tool, so point the model at its own file tools there
+  const readHint =
+    getMode() === 'mini'
+      ? 'Read it with your own file tools if you need it.'
+      : 'Use the read_file tool to read it if you need it.';
 
   // Get individual file objects from ai-digest
   const { files } = await aiDigest.generateDigestFiles({
@@ -178,7 +74,7 @@ export async function generateCodebaseDigest(
 
     // If file is larger than page size, replace with omission message
     if (fileCharCount > pageSize) {
-      const omissionMessage = `# ${file.fileName}\nFile omitted due to large size (${fileCharCount.toLocaleString()} characters)\n`;
+      const omissionMessage = `# ${file.fileName}\nFile omitted due to large size (${fileCharCount.toLocaleString()} characters). ${readHint}\n`;
       fileContent = omissionMessage;
       fileCharCount = omissionMessage.length;
     }
@@ -201,26 +97,19 @@ export async function generateCodebaseDigest(
     pages.push(currentPageFiles);
   }
 
-  // Get the requested page content
-  const pageIndex = page - 1;
-  let currentPageContent = '';
-
-  if (pageIndex >= 0 && pageIndex < pages.length) {
-    currentPageContent = pages[pageIndex].join('');
-  }
+  // Get the requested page content (empty when the page is beyond the last one)
+  const currentPageContent = pages[page - 1]?.join('') ?? '';
 
   // Check if there are more pages
   const hasMorePages = page < pages.length;
 
-  if (hasMorePages) {
-    currentPageContent += `\n---\nThis is page ${page}. You MUST call this tool again with page: ${page + 1} to get the rest of the files.\n`;
-  } else {
-    // We're on the last page of a multi-page digest, or beyond the last page
-    currentPageContent += `\n---\nThis is the last page (page ${page}). Do NOT call this tool again - you have received the complete codebase.\n`;
-  }
+  const footer = hasMorePages
+    ? `\n---\nThis is page ${page}. You MUST call this tool again with page: ${page + 1} to get the rest of the files.\n`
+    : // We're on the last page of a multi-page digest, or beyond the last page
+      `\n---\nThis is the last page (page ${page}). Do NOT call this tool again - you have received the complete codebase.\n`;
 
   return {
-    content: currentPageContent,
+    content: currentPageContent + footer,
     hasMorePages,
     currentPage: page,
     nextPage: hasMorePages ? page + 1 : undefined,

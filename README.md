@@ -35,6 +35,8 @@ For line-based partial editing instead of complete file rewrites, use:
 npx context-coder --edit-file-mode
 ```
 
+Coco listens on `127.0.0.1`, so only programs on your computer can connect to it (see [Security](#security)).
+
 Then add this to the Claude Desktop config and restart Claude Desktop afterwards:
 
 ```json
@@ -42,7 +44,7 @@ Then add this to the Claude Desktop config and restart Claude Desktop afterwards
   "mcpServers": {
     "context-coder": {
       "command": "npx",
-      "args": ["-y", "supergateway", "--streamableHttp", "http://localhost:3001/mcp"]
+      "args": ["-y", "supergateway", "--streamableHttp", "http://127.0.0.1:3001/mcp"]
     }
   }
 }
@@ -66,7 +68,7 @@ services:
   context-coder:
     image: ghcr.io/khromov/context-coder:full
     ports:
-      - '3001:3001'
+      - '127.0.0.1:3001:3001'
     volumes:
       - ./:/app
     working_dir: /app
@@ -79,11 +81,15 @@ services:
   context-coder:
     image: ghcr.io/khromov/context-coder:edit
     ports:
-      - '3001:3001'
+      - '127.0.0.1:3001:3001'
     volumes:
       - ./:/app
     working_dir: /app
 ```
+
+The `127.0.0.1:` prefix keeps the port reachable only from your computer. Without it, Docker publishes the port on every network interface, and anyone on your network could use Coco to read, change and run code in your project.
+
+On Linux, files Coco creates are owned by root unless the container runs as your own user. Add `user: '1000:1000'` to the service, replacing the numbers with the output of `id -u` and `id -g`.
 
 Start the service:
 
@@ -98,7 +104,7 @@ Then add this to the Claude Desktop config and restart Claude Desktop afterwards
   "mcpServers": {
     "context-coder": {
       "command": "npx",
-      "args": ["-y", "supergateway", "--streamableHttp", "http://localhost:3001/mcp"]
+      "args": ["-y", "supergateway", "--streamableHttp", "http://127.0.0.1:3001/mcp"]
     }
   }
 }
@@ -207,7 +213,7 @@ For [Claude Code](https://claude.ai/code), create `.mcp.json` in your project ro
     "context-coder": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "supergateway", "--streamableHttp", "http://localhost:3001/mcp"]
+      "args": ["-y", "supergateway", "--streamableHttp", "http://127.0.0.1:3001/mcp"]
     }
   }
 }
@@ -220,7 +226,7 @@ services:
   context-coder:
     image: ghcr.io/khromov/context-coder:mini
     ports:
-      - '3001:3001'
+      - '127.0.0.1:3001:3001'
     volumes:
       - ./:/app
     working_dir: /app
@@ -263,6 +269,14 @@ Many common build artifacts and folders are already automatically excluded (such
 
 You can have both a `.cocoignore` and a `.cocominify` file in the same repo.
 
+## Security
+
+In HTTP mode, Coco listens on `127.0.0.1` by default, so only programs on your computer can connect. It also only accepts requests whose `Host` header (and `Origin` header, when a browser sends one) is `localhost`, `127.0.0.1` or `[::1]`. That stops web pages from reaching it through DNS rebinding.
+
+The full and edit variants can run shell commands in your project, so think twice before using `--host 0.0.0.0` or publishing the Docker port without the `127.0.0.1:` prefix: anyone who can reach the port can use those tools. If clients need to reach Coco under another name, add it with `--allowed-hosts` or `COCO_ALLOWED_HOSTS`.
+
+File tools only work inside the directory Coco was started in: `../` paths and symlinks that lead outside it are rejected.
+
 ## Configuration
 
 <details>
@@ -282,6 +296,9 @@ volumes:
 - `COCO_DEV`: "true" or "false" to mount the `./mount` folder instead of using `/app`
 - `COCO_MCP_TRANSPORT`: Set to `stdio` or `http` (default: `http`)
 - `COCO_PORT`: Override default port 3001 (HTTP mode only)
+- `COCO_HOST`: Address to listen on in HTTP mode (equivalent to `--host` flag, default: `127.0.0.1`; the Docker image sets `0.0.0.0` inside the container)
+- `COCO_ALLOWED_HOSTS`: Comma-separated hostnames to accept in the `Host` and `Origin` headers besides `localhost`, `127.0.0.1` and `[::1]` (equivalent to `--allowed-hosts` flag)
+- `COCO_SHELL`: Shell that `execute_command` runs commands with. By default this is `/bin/sh` (`cmd.exe` on Windows), except on macOS: there `/bin/sh` is bash 3.2, which mis-parses quotes inside `$(...)`, so Coco uses `/bin/zsh` emulating sh instead
 - `COCO_PAGE_SIZE`: Override the `get_codebase` pagination page size in characters (equivalent to `--page-size` flag, default: 99000)
 - `COCO_CLAUDE_CODE_PAGE_SIZE`: Override the `_pageSize` value the model is told to use under Claude Code (equivalent to `--claude-code-page-size` flag, default: 30000)
 - `CONTEXT_CODER_EDIT_MODE`: Set to "true" to enable `edit_file` tool (equivalent to `--edit-file-mode` flag)
@@ -376,6 +393,8 @@ npx context-coder [options]
 - `-e, --edit` - Enable the `edit_file` tool for line-based partial edits instead of requiring complete file rewrites with `write_file`
 - `--edit-file-mode` - Same as `-e, --edit` (legacy flag)
 - `-p, --port <number>` - Port to listen on (default: 3001)
+- `--host <address>` - Address to listen on in HTTP mode (default: `127.0.0.1`, this computer only; `0.0.0.0` listens on all interfaces - see [Security](#security))
+- `--allowed-hosts <hosts>` - Comma-separated hostnames to accept in the `Host` and `Origin` headers besides `localhost`, `127.0.0.1` and `[::1]`
 - `-c, --claude-token-limit <number>` - Set Claude token limit - useful for models with larger context windows (default: 150000)
 - `-g, --gpt-token-limit <number>` - Set GPT token limit - useful for models with larger context windows (default: 128000)
 - `--page-size <number>` - Set the `get_codebase` pagination page size in characters (default: 99000; Claude Desktop caps pages at 100000 characters)
@@ -478,10 +497,10 @@ Or build individually:
 docker build -t context-coder:latest .
 
 # Mini version
-docker build --build-arg COCO_BUILD_TYPE=mini -t context-coder:mini .
+docker build --build-arg BUILD_TYPE=mini -t context-coder:mini .
 
 # Edit version
-docker build --build-arg COCO_BUILD_TYPE=edit -t context-coder:edit .
+docker build --build-arg BUILD_TYPE=edit -t context-coder:edit .
 ```
 
 Build a custom image:

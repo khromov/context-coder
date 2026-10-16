@@ -1,11 +1,11 @@
 import { ListDirectoryArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
-import { validateRelativePath, resolveRelativePath } from './utils.js';
+import { resolveSafePath } from './utils.js';
 import fs from 'fs/promises';
 import logger from '../logger.js';
 
 export async function handleListDirectory(
-  args: any,
+  args: unknown,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   logger.debug('📋 list_directory handler started');
@@ -14,8 +14,7 @@ export async function handleListDirectory(
   if (!parsed.success) {
     throw new Error(`Invalid arguments for list_directory: ${parsed.error}`);
   }
-  validateRelativePath(parsed.data.path);
-  const absolutePath = resolveRelativePath(parsed.data.path, context.absoluteRootDir);
+  const absolutePath = await resolveSafePath(parsed.data.path, context.absoluteRootDir);
   const entries = await fs.readdir(absolutePath, { withFileTypes: true });
   const formatted = entries
     .map((entry) => `${entry.isDirectory() ? '[DIR]' : '[FILE]'} ${entry.name}`)

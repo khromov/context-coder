@@ -21,6 +21,8 @@ export default [
         Buffer: 'readonly',
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
         NodeJS: 'readonly'
       }
     },
@@ -49,7 +51,8 @@ export default [
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         jest: 'readonly',
-        URL: 'readonly'
+        URL: 'readonly',
+        NodeJS: 'readonly'
       }
     },
     plugins: {
@@ -62,6 +65,8 @@ export default [
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       'jest/no-conditional-expect': 'off',
+      // itPosix is `it`, skipped on Windows
+      'jest/no-standalone-expect': ['error', { additionalTestBlockFunctions: ['itPosix'] }],
       '@typescript-eslint/array-type': 'off'
     }
   },

@@ -31,7 +31,6 @@ export const DirectoryTreeArgsSchema = z.object({
     .string()
     .optional()
     .default('')
-    .transform((p) => p || '')
     .describe('Relative path from root directory, with or without "./" prefix (defaults to root)'),
 });
 
@@ -50,12 +49,14 @@ export const ExecuteCommandArgsSchema = z.object({
   command: z
     .string()
     .describe(
-      'The full command line to execute, run through a shell (/bin/sh on POSIX, cmd.exe on Windows). ' +
+      'The full command line to execute, run through the shell named in the tool description. ' +
         'Quoting, pipes, &&, redirects, globs and $VAR expansion are supported ' +
         '(e.g., "npx -y ai-digest", "ls -la", \'grep -n "import" src/index.ts | head -5\')'
     ),
   timeout: z
     .number()
+    .int()
+    .positive()
     .optional()
     .default(60000)
     .describe('Command timeout in milliseconds (default: 60 seconds)'),
@@ -71,9 +72,17 @@ export const GetCodebaseArgsSchema = z.object({
     .optional()
     .default('')
     .describe('Relative path from root directory to analyze (defaults to root)'),
-  page: z.number().optional().default(1).describe('Page number for pagination (defaults to 1)'),
+  page: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .default(1)
+    .describe('Page number for pagination (defaults to 1)'),
   _pageSize: z
     .number()
+    .int()
+    .positive()
     .optional()
     .describe('Page size for pagination. Leave empty to use the server default.'),
 });
@@ -94,24 +103,34 @@ export const GetCodebaseTopLargestFilesArgsSchema = z.object({
     .describe('Relative path from root directory to analyze (defaults to root)'),
   count: z
     .number()
+    .int()
+    .positive()
     .optional()
     .default(20)
     .describe('Number of largest files to return (defaults to 20)'),
 });
 
 export const EditOperation = z.object({
-  oldText: z.string().describe('Text to search for - must match exactly'),
-  newText: z.string().describe('Text to replace with'),
+  oldText: z
+    .string()
+    .min(1)
+    .describe(
+      'Text to search for - must match exactly. Line endings are matched to the file (LF or CRLF).'
+    ),
+  newText: z.string().describe('Text to replace it with, inserted exactly as written'),
 });
 
 export const EditFileArgsSchema = z.object({
   path: z.string().describe('Relative path from root directory (with or without "./" prefix)'),
-  edits: z.array(EditOperation),
-  dryRun: z.boolean().default(false).describe('Preview changes using git-style diff format'),
+  edits: z.array(EditOperation).min(1),
+  dryRun: z
+    .boolean()
+    .default(false)
+    .describe('Preview the edits as a diff without changing the file'),
   replaceAll: z
     .boolean()
     .default(false)
     .describe(
-      'Allow replacing all occurrences of text. If false and multiple matches found, returns an error.'
+      'Replace every occurrence of each oldText. If false, an oldText that matches more than once is an error.'
     ),
 });

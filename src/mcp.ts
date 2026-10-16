@@ -7,7 +7,6 @@ import {
   GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { readFileSync } from 'fs';
-import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { getTools } from './tools.js';
@@ -15,65 +14,26 @@ import { HandlerContext } from './types.js';
 import logger from './logger.js';
 import { prompts, getPromptContent } from './lib/prompts.js';
 import { getVersion } from './lib/version.js';
-
-/**
- * Process instructions.md content based on edit mode
- * Replaces template placeholders with appropriate content
- */
-function processInstructionsForEditMode(instructions: string, editModeEnabled: boolean): string {
-  let processed = instructions;
-
-  if (editModeEnabled) {
-    // Replace placeholders with edit_file enabled content
-    processed = processed.replace(
-      '{EDIT_FILE_TOOL_LIST}',
-      '- `edit_file` - Make line-based partial edits to files'
-    );
-    processed = processed.replace(
-      '{EDITING_STRATEGY}',
-      '**Editing Strategy**: Use `edit_file` for small, targeted changes and `write_file` when rewriting entire files or making extensive changes.'
-    );
-    processed = processed.replace(
-      '{EFFICIENT_EDITING_PRACTICE}',
-      '**Efficient Editing**: Use `edit_file` for small changes, `write_file` for larger edits'
-    );
-  } else {
-    // Replace placeholders with edit_file disabled content
-    processed = processed.replace('{EDIT_FILE_TOOL_LIST}', '');
-    processed = processed.replace(
-      '{EDITING_STRATEGY}',
-      '**Editing Strategy**: Use `write_file` to create or completely overwrite files with new content.'
-    );
-    processed = processed.replace(
-      '{EFFICIENT_EDITING_PRACTICE}',
-      '**Efficient Editing**: Use `write_file` for complete file rewrites'
-    );
-  }
-
-  return processed;
-}
+import { processInstructions } from './lib/instructions.js';
+import { getMode, isEditMode } from './constants.js';
+import { getRootDir } from './handlers/utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Try to read instructions file, but don't fail if it doesn't exist
+// Try to read instructions file, but don't fail if it doesn't exist.
+// It is filled in for the mode (mini/full) and whether edit_file is enabled.
 let instructions = '';
 try {
-  instructions = readFileSync(join(__dirname, 'instructions.md'), 'utf-8');
-
-  // Process instructions based on edit mode
-  const editModeEnabled = process.env.CONTEXT_CODER_EDIT_MODE === 'true';
-  instructions = processInstructionsForEditMode(instructions, editModeEnabled);
+  const template = readFileSync(join(__dirname, 'instructions.md'), 'utf-8');
+  instructions = processInstructions(template, { mode: getMode(), editMode: isEditMode() });
 } catch {
   logger.warn('Warning: instructions.md not found, continuing without instructions');
 }
 
 export const createServer = async () => {
-  // Determine the root directory based on environment
-  const ROOT_DIR = process.env.COCO_DEV === 'true' ? './mount' : './';
-
-  // Resolve to absolute path for internal use only
-  const absoluteRootDir = path.resolve(ROOT_DIR);
+  // ./mount in development (COCO_DEV=true), otherwise the working directory
+  const absoluteRootDir = getRootDir();
 
   // Get tools based on current mode
   const tools = getTools();

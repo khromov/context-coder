@@ -1,6 +1,21 @@
 import path from 'path';
 import fs from 'fs/promises';
+import { realpathSync } from 'fs';
 import type { MinifyFileDescriptionCallback } from 'ai-digest';
+import { getMode } from '../constants.js';
+
+/**
+ * The directory the tools operate on: ./mount in development (COCO_DEV=true), otherwise the
+ * working directory. Symlinks are resolved so it compares cleanly with resolved paths.
+ */
+export function getRootDir(): string {
+  const rootDir = path.resolve(process.env.COCO_DEV === 'true' ? './mount' : './');
+  try {
+    return realpathSync(rootDir);
+  } catch {
+    return rootDir;
+  }
+}
 
 export function validateRelativePath(relativePath: string): void {
   // Handle empty path as current directory
@@ -42,6 +57,102 @@ export function resolveRelativePath(relativePath: string, rootDir: string): stri
   // Strip leading './' if present
   const cleanPath = relativePath.startsWith('./') ? relativePath.slice(2) : relativePath;
   return path.join(rootDir, cleanPath);
+}
+
+export interface ResolveSafePathOptions {
+  /**
+   * Resolve a symlink in the last path segment to its target (the default). Pass false to
+   * act on the link itself, e.g. when removing or moving it.
+   */
+  followFinalSymlink?: boolean;
+}
+
+/**
+ * Validate a user-supplied relative path and resolve it to an absolute path inside the root
+ * directory. Symlinks are resolved, so a link that leads outside the root is rejected instead
+ * of followed. The path does not have to exist yet: its nearest existing parent is checked.
+ */
+export async function resolveSafePath(
+  relativePath: string,
+  rootDir: string,
+  { followFinalSymlink = true }: ResolveSafePathOptions = {}
+): Promise<string> {
+  validateRelativePath(relativePath);
+  const absolutePath = resolveRelativePath(relativePath, rootDir);
+  const realRoot = await fs.realpath(rootDir);
+
+  if (!followFinalSymlink && path.resolve(absolutePath) !== path.resolve(rootDir)) {
+    const realParent = await resolveExistingPath(
+      path.dirname(absolutePath),
+      realRoot,
+      relativePath
+    );
+    return path.join(realParent, path.basename(absolutePath));
+  }
+
+  return resolveExistingPath(absolutePath, realRoot, relativePath);
+}
+
+// Resolve symlinks in the longest part of absolutePath that exists, check that it stays inside
+// realRoot, then add back the segments that don't exist yet
+async function resolveExistingPath(
+  absolutePath: string,
+  realRoot: string,
+  displayPath: string
+): Promise<string> {
+  const missingSegments: string[] = [];
+  let current = absolutePath;
+
+  for (;;) {
+    let realPath: string | undefined;
+    try {
+      realPath = await fs.realpath(current);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') {
+        throw error;
+      }
+      // realpath also fails for a symlink whose target is missing. Where it would lead is
+      // unknown, so refuse it rather than create something through it.
+      if (await isSymlink(current)) {
+        throw new Error(`Path goes through a broken symlink (got: ${displayPath})`);
+      }
+    }
+
+    if (realPath !== undefined) {
+      if (!isInside(realPath, realRoot)) {
+        throw new Error(
+          `Path leads outside the root directory through a symlink (got: ${displayPath})`
+        );
+      }
+      return missingSegments.length > 0
+        ? path.join(realPath, ...missingSegments.reverse())
+        : realPath;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) {
+      throw new Error(`Path is outside the root directory (got: ${displayPath})`);
+    }
+    missingSegments.push(path.basename(current));
+    current = parent;
+  }
+}
+
+async function isSymlink(filePath: string): Promise<boolean> {
+  try {
+    return (await fs.lstat(filePath)).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function isInside(childPath: string, parentPath: string): boolean {
+  const relative = path.relative(parentPath, childPath);
+  return (
+    relative === '' ||
+    (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`))
+  );
 }
 
 /**
@@ -127,14 +238,19 @@ export async function getMinifyFile(inputDir: string): Promise<string | undefine
 }
 
 /**
- * Custom minify file description that tells the AI it can read the file
+ * Custom minify file description that tells the AI how it can read the file.
+ * Mini mode has no read_file tool, so the model is pointed at its own file tools instead.
  * @param metadata - File metadata from ai-digest
- * @returns Custom minify message with read_file instruction
+ * @returns Custom minify message with a read instruction
  */
 export const getMinifyFileDescription: MinifyFileDescriptionCallback = (metadata) => {
+  const readHint =
+    getMode() === 'mini'
+      ? 'Read the file with your own file tools if you need its actual content.'
+      : 'You can use the read_file tool to read the actual content if necessary.';
   return (
     `# ${metadata.displayPath}\n\n` +
     `This file has been minified to save tokens. The file exists at the above location.\n` +
-    `You can use the read_file tool to read the actual content if necessary.\n\n`
+    `${readHint}\n\n`
   );
 };

@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
-import { exec } from 'child_process';
+import { exec, spawn, ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fs from 'fs/promises';
+import http from 'http';
+import net from 'net';
 
 const execAsync = promisify(exec);
 
@@ -29,6 +31,112 @@ async function runCommand(
   });
 }
 
+// Environment for spawned servers, without settings from the developer's shell that
+// would change where or how they listen
+function serverEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    COCO_MCP_TRANSPORT: 'http',
+    COCO_DEV: 'true',
+  };
+  delete env.COCO_HOST;
+  delete env.COCO_PORT;
+  delete env.COCO_ALLOWED_HOSTS;
+  delete env.CONTEXT_CODER_MODE;
+  return env;
+}
+
+// Ask the OS for a free port, skipping the default, which a locally running server may use
+async function getFreePort(): Promise<number> {
+  for (;;) {
+    const port = await new Promise<number>((resolve, reject) => {
+      const srv = net.createServer();
+      srv.unref();
+      srv.on('error', reject);
+      srv.listen(0, '127.0.0.1', () => {
+        const { port } = srv.address() as net.AddressInfo;
+        srv.close(() => resolve(port));
+      });
+    });
+    if (port !== 3001) return port;
+  }
+}
+
+interface RunningServer {
+  child: ChildProcess;
+  output: () => string;
+}
+
+// Start the HTTP server and resolve once it reports that it is listening
+function startServer(args: string[]): Promise<RunningServer> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('node', [CLI_PATH, ...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: serverEnv(),
+    });
+    let output = '';
+    let started = false;
+
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error(`Server did not start within 10 seconds:\n${output}`));
+    }, 10000);
+
+    const onData = (data: Buffer) => {
+      output += data.toString();
+      if (!started && output.includes('listening on port')) {
+        started = true;
+        clearTimeout(timeout);
+        resolve({ child, output: () => output });
+      }
+    };
+    child.stdout?.on('data', onData);
+    child.stderr?.on('data', onData);
+    child.on('exit', (code) => {
+      clearTimeout(timeout);
+      if (!started) {
+        reject(new Error(`Server exited with code ${code} before listening:\n${output}`));
+      }
+    });
+  });
+}
+
+// Stop a server, force-killing it if it hasn't exited after 2 seconds
+async function stopServer(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    const forceKill = setTimeout(() => {
+      child.kill('SIGKILL');
+      resolve();
+    }, 2000);
+    child.once('exit', () => {
+      clearTimeout(forceKill);
+      resolve();
+    });
+    child.kill('SIGTERM');
+  });
+}
+
+function getHealth(port: number): Promise<{ status: string; mode: string }> {
+  return new Promise((resolve, reject) => {
+    http
+      .get({ host: '127.0.0.1', port, path: '/health', agent: false }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => (body += chunk));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      })
+      .on('error', reject);
+  });
+}
+
 describe('CLI with Commander', () => {
   describe('Main command', () => {
     it('should show help when --help is passed', async () => {
@@ -39,6 +147,8 @@ describe('CLI with Commander', () => {
       expect(stdout).toContain('--mini');
       expect(stdout).toContain('--full');
       expect(stdout).toContain('--stdio');
+      expect(stdout).toContain('--host');
+      expect(stdout).toContain('--allowed-hosts');
       expect(stdout).toContain('Commands:');
       expect(stdout).toContain('ls [options]');
     });
@@ -52,81 +162,87 @@ describe('CLI with Commander', () => {
       expect(versionMatch![1]).toMatch(/^\d+\.\d+\.\d+$/);
     });
 
-    it('should start HTTP server by default', async () => {
-      // Use a random port to avoid conflicts
-      const port = 4000 + Math.floor(Math.random() * 1000);
+    it('should start an HTTP server in full mode on 127.0.0.1 by default', async () => {
+      const port = await getFreePort();
+      const { child, output } = await startServer(['--port', String(port)]);
 
-      // Start the server in the background
-      const serverProcess = exec(`PORT=${port} node ${CLI_PATH}`, (_error, _stdout, _stderr) => {
-        // This callback is called when the process exits
+      try {
+        expect(output()).toContain(`listening on port ${port} at 127.0.0.1`);
+        const health = await getHealth(port);
+        expect(health.status).toBe('healthy');
+        expect(health.mode).toBe('full');
+      } finally {
+        await stopServer(child);
+      }
+    }, 15000);
+
+    it('should start in mini mode with --mini', async () => {
+      const port = await getFreePort();
+      const { child } = await startServer(['--port', String(port), '--mini']);
+
+      try {
+        expect((await getHealth(port)).mode).toBe('mini');
+      } finally {
+        await stopServer(child);
+      }
+    }, 15000);
+
+    it('should start in full mode with --full', async () => {
+      const port = await getFreePort();
+      const { child } = await startServer(['--port', String(port), '--full']);
+
+      try {
+        expect((await getHealth(port)).mode).toBe('full');
+      } finally {
+        await stopServer(child);
+      }
+    }, 15000);
+
+    it('should exit with a clear message when the port is already in use', async () => {
+      const blocker = net.createServer();
+      const port = await new Promise<number>((resolve) => {
+        blocker.listen(0, '127.0.0.1', () => resolve((blocker.address() as net.AddressInfo).port));
       });
 
-      // Give the server time to start
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
       try {
-        // Check if server is running by looking for the process
-        expect(serverProcess.pid).toBeDefined();
-        expect(serverProcess.killed).toBe(false);
+        const result = await new Promise<{ code: number | null; output: string }>((resolve) => {
+          const child = spawn('node', [CLI_PATH, '--port', String(port)], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env: serverEnv(),
+          });
+          let output = '';
+          child.stdout?.on('data', (data) => (output += data.toString()));
+          child.stderr?.on('data', (data) => (output += data.toString()));
+          child.on('exit', (code) => resolve({ code, output }));
+        });
+
+        expect(result.code).toBe(1);
+        expect(result.output).toContain(`Port ${port} is already in use`);
       } finally {
-        // Clean up: kill the server
-        serverProcess.kill();
+        await new Promise((resolve) => blocker.close(resolve));
       }
-    });
+    }, 15000);
 
-    it('should accept --mini flag', async () => {
-      const port = 4000 + Math.floor(Math.random() * 1000);
-
-      const serverProcess = exec(
-        `PORT=${port} node ${CLI_PATH} --mini`,
-        (_error, _stdout, _stderr) => {
-          // Process will be killed, so we don't check here
-        }
-      );
-
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      try {
-        expect(serverProcess.pid).toBeDefined();
-      } finally {
-        serverProcess.kill();
-      }
-    });
-
-    it('should accept --full flag', async () => {
-      const port = 4000 + Math.floor(Math.random() * 1000);
-
-      const serverProcess = exec(
-        `PORT=${port} node ${CLI_PATH} --full`,
-        (_error, _stdout, _stderr) => {
-          // Process will be killed, so we don't check here
-        }
-      );
-
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      try {
-        expect(serverProcess.pid).toBeDefined();
-      } finally {
-        serverProcess.kill();
-      }
-    });
-
-    it('should accept --stdio flag', async () => {
-      // For stdio mode, we need to handle it differently
-      // Create a child process that will be killed after a short time
-      const child = exec(`node ${CLI_PATH} --stdio`, (_error, _stdout, _stderr) => {
-        // We expect this to be killed, so error is normal
+    it('should keep running with --stdio', async () => {
+      const child = spawn('node', [CLI_PATH, '--stdio', '--mini'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...serverEnv(), COCO_MCP_TRANSPORT: 'stdio' },
       });
 
-      // Give it a moment to start
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        // Still running: it is waiting for MCP messages on stdin
+        expect(child.exitCode).toBeNull();
+      } finally {
+        await stopServer(child);
+      }
+    });
 
-      // Kill the process
-      child.kill();
+    it('should reject a port that is not a positive whole number', async () => {
+      const result = await runCommand(`node ${CLI_PATH} --port abc`);
 
-      // The test passes if we can start and kill the stdio server without errors
-      expect(child.killed).toBe(true);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('is invalid');
     });
 
     it('should handle unknown arguments', async () => {
@@ -279,6 +395,7 @@ describe('CLI with Commander', () => {
 
         // Should handle minified files indicator correctly
         expect(result.stdout).toContain('Using minify file: .cocominify');
+        expect(result.stdout).toContain('M = File content has been minified');
       } finally {
         // Clean up
         await fs.rm(LONG_PATH_TEST_DIR, { recursive: true, force: true });

@@ -1,12 +1,13 @@
 import { SearchFilesArgsSchema } from '../schemas.js';
 import { HandlerContext, HandlerResponse } from '../types.js';
-import { validateRelativePath, resolveRelativePath } from './utils.js';
+import { resolveSafePath } from './utils.js';
 import { searchFiles } from '../file-operations.js';
+import fs from 'fs/promises';
 import path from 'path';
 import logger from '../logger.js';
 
 export async function handleSearchFiles(
-  args: any,
+  args: unknown,
   context: HandlerContext
 ): Promise<HandlerResponse> {
   const parsed = SearchFilesArgsSchema.safeParse(args);
@@ -18,14 +19,14 @@ export async function handleSearchFiles(
     `🔍 search_files handler started: pattern "${parsed.data.pattern}", path ${parsed.data.path}`
   );
 
-  validateRelativePath(parsed.data.path);
-  const absolutePath = resolveRelativePath(parsed.data.path, context.absoluteRootDir);
+  const absolutePath = await resolveSafePath(parsed.data.path, context.absoluteRootDir);
   const results = await searchFiles(absolutePath, parsed.data.pattern, parsed.data.excludePatterns);
 
-  // Convert absolute paths back to relative paths without leading ./
-  // Always use forward slashes so results look the same on Windows
+  // Results are under the symlink-free search path, so make them relative to the
+  // symlink-free root. Always use forward slashes so results look the same on Windows.
+  const realRoot = await fs.realpath(context.absoluteRootDir);
   const relativePaths = results.map((absPath) => {
-    const relPath = path.relative(context.absoluteRootDir, absPath);
+    const relPath = path.relative(realRoot, absPath);
     return relPath.split(path.sep).join('/');
   });
 

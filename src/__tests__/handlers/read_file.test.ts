@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import fs from 'fs/promises';
+import path from 'path';
+import { tmpdir } from 'os';
 import { handleReadFile } from '../../handlers/read_file.js';
 import { setupTestDir, cleanupTestDir, createTestContext, createTestFile } from './test-utils.js';
+
+// Creating symlinks on Windows needs extra privileges
+const describePosix = process.platform === 'win32' ? describe.skip : describe;
 
 describe('handleReadFile', () => {
   let testDir: string;
@@ -37,5 +43,36 @@ describe('handleReadFile', () => {
     await expect(handleReadFile({ path: '../outside.txt' }, context)).rejects.toThrow(
       'Path cannot contain parent directory references'
     );
+  });
+
+  describePosix('symlinks', () => {
+    let outsideDir: string;
+
+    beforeEach(async () => {
+      outsideDir = await fs.mkdtemp(path.join(tmpdir(), 'coco-outside-'));
+      await fs.writeFile(path.join(outsideDir, 'secret.txt'), 'outside the root');
+    });
+
+    afterEach(async () => {
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    });
+
+    it('should refuse to read through a symlink that leads outside the root', async () => {
+      await fs.symlink(outsideDir, path.join(testDir, 'escape'));
+      const context = createTestContext(testDir);
+
+      await expect(handleReadFile({ path: 'escape/secret.txt' }, context)).rejects.toThrow(
+        'Path leads outside the root directory through a symlink'
+      );
+    });
+
+    it('should read through a symlink that stays inside the root', async () => {
+      await createTestFile(testDir, 'real/notes.txt', 'inside the root');
+      await fs.symlink(path.join(testDir, 'real'), path.join(testDir, 'alias'));
+      const context = createTestContext(testDir);
+
+      const result = await handleReadFile({ path: 'alias/notes.txt' }, context);
+      expect(result.content[0].text).toBe('inside the root');
+    });
   });
 });

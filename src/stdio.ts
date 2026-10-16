@@ -1,9 +1,8 @@
-#!/usr/bin/env node
-
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createServer } from './mcp.js';
 import logger from './logger.js';
 import { getVersion } from './lib/version.js';
+import { getMode } from './constants.js';
 import { killAllRunningCommands } from './handlers/execute_command.js';
 
 // All logging MUST go to stderr in stdio mode
@@ -35,9 +34,7 @@ export async function startStdioServer(): Promise<void> {
     await server.connect(transport);
 
     // Log to stderr only - stdout is for MCP protocol
-    const mode = process.env.CONTEXT_CODER_MODE || 'mini';
-    const version = getVersion();
-    logger.info(`🥥 Coco MCP Server v${version} running in stdio mode (${mode})`);
+    logger.info(`🥥 Coco MCP Server v${getVersion()} running in stdio mode (${getMode()})`);
   } catch (error) {
     logger.error('Failed to start stdio server:', error);
     process.exit(1);

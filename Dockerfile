@@ -30,6 +30,10 @@ FROM node:22-alpine AS release
 ARG BUILD_TYPE=regular
 ENV COCO_BUILD_TYPE=$BUILD_TYPE
 
+# Listen on all interfaces inside the container so the published port reaches the server.
+# Publish it on 127.0.0.1 only (e.g. "127.0.0.1:3001:3001") to keep it off the network.
+ENV COCO_HOST=0.0.0.0
+
 LABEL org.opencontainers.image.title="Context Coder"
 LABEL org.opencontainers.image.description="Context Coder: MCP server for full-context coding"
 LABEL org.opencontainers.image.vendor="Model Context Protocol"
